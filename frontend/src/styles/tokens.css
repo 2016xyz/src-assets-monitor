@@ -1,0 +1,109 @@
+/* ========================================================
+   SRC Assets Monitor - 商业级设计 Token 落地规范
+   风格定义: 淡蓝 · 通透 · 呼吸感 · 玻璃拟态 · 柔和光晕 · 微渐变
+   ======================================================== */
+
+:root {
+  /* 品牌淡蓝阶梯色系 */
+  --brand-50: #EFF6FF;
+  --brand-100: #DBEAFE;
+  --brand-200: #BFDBFE;
+  --brand-300: #93C5FD;
+  --brand-400: #60A5FA;
+  --brand-500: #3B82F6; /* 主调品牌色 */
+  --brand-600: #2563EB;
+  --brand-700: #1D4ED8;
+
+  /* 语义化色彩 */
+  --success: #10B981;
+  --success-bg: #ECFDF5;
+  --success-border: rgba(16, 185, 129, 0.2);
+
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
+  --warning-border: rgba(245, 158, 11, 0.2);
+
+  --danger: #EF4444;
+  --danger-bg: #FEF2F2;
+  --danger-border: rgba(239, 68, 68, 0.2);
+
+  --info: #38BDF8;
+  --info-bg: #F0F9FF;
+  --info-border: rgba(56, 189, 248, 0.2);
+
+  /* 界面层次底色与卡片 */
+  --bg: #F5F8FF;
+  --bg-deep: #EAF2FF;
+  --card: #FFFFFF;
+  --card-elevated: #FFFFFF;
+
+  /* 文字阶梯 (Inter + HarmonyOS Sans) */
+  --text-1: #0F172A;
+  --text-2: #475569;
+  --text-3: #94A3B8;
+  --text-disabled: #CBD5E1;
+
+  /* 边框体系 */
+  --border: rgba(59, 130, 246, 0.10);
+  --border-strong: rgba(59, 130, 246, 0.18);
+  --border-glass: rgba(255, 255, 255, 0.60);
+
+  /* 精致圆角体系 */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-full: 9999px;
+
+  /* 柔和阴影与呼吸光晕 */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px rgba(59, 130, 246, 0.06);
+  --shadow-md: 0 4px 16px rgba(59, 130, 246, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 40px rgba(59, 130, 246, 0.14);
+  --shadow-glow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  --shadow-glow-success: 0 0 0 4px rgba(16, 185, 129, 0.15);
+
+  /* 微渐变体系 */
+  --grad-brand: linear-gradient(135deg, #60A5FA 0%, #3B82F6 50%, #2563EB 100%);
+  --grad-brand-hover: linear-gradient(135deg, #93C5FD 0%, #60A5FA 50%, #3B82F6 100%);
+  --grad-bg: linear-gradient(180deg, #F8FBFF 0%, #F0F6FF 100%);
+  --grad-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.42) 100%);
+
+  /* 物理动效缓动函数 */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur: 0.28s;
+
+  /* 布局尺寸 */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 72px;
+  --header-height: 64px;
+}
+
+html.dark {
+  --bg: #0B1220;
+  --bg-deep: #070B14;
+  --card: #111A2E;
+  --card-elevated: #16223C;
+  --brand-500: #60A5FA;
+  --text-1: #F8FAFC;
+  --text-2: #94A3B8;
+  --text-3: #64748B;
+  --border: rgba(96, 165, 250, 0.12);
+  --border-strong: rgba(96, 165, 250, 0.24);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --grad-bg: linear-gradient(180deg, #0B1220 0%, #070B14 100%);
+  --grad-glass: linear-gradient(135deg, rgba(17, 26, 46, 0.75) 0%, rgba(17, 26, 46, 0.45) 100%);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

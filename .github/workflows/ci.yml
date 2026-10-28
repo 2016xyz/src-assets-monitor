@@ -1,0 +1,44 @@
+name: Build & Test CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  php-test:
+    name: PHP Quality & Discovery Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP Environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, openssl, curl, fileinfo, sockets, pdo, pdo_mysql, pdo_sqlite
+          coverage: none
+
+      - name: Syntax Check All PHP Files
+        run: |
+          echo "Checking syntax across all PHP scripts..."
+          find . -type f -name "*.php" ! -path "*/node_modules/*" -exec php -l {} \;
+
+      - name: Run Asset Name Module Tests
+        run: php tests/AssetNameModuleTest.php
+
+      - name: Run Expanded Discovery Tests
+        run: php tests/ExpandedAssetDiscoveryTest.php
+
+  docker-lint:
+    name: Docker Configuration Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config

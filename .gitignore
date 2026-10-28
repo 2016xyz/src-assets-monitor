@@ -1,0 +1,20 @@
+# 环境配置与敏感凭据
+.env
+.env.backup
+*.log
+
+# 运行时缓存与会话
+runtime/*.lock
+runtime/*.data
+runtime/*.sqlite
+runtime/*.sqlite-journal
+!runtime/.gitkeep
+
+# 前端构建与依赖
+frontend/node_modules/
+frontend/dist/
+.ekko-tmp/
+
+# 系统杂项
+.DS_Store
+Thumbs.db
