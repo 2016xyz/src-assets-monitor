@@ -14,6 +14,7 @@ use App\Controllers\ProxyController;
 use App\Controllers\ProxyGroupController;
 use App\Controllers\SettingController;
 use App\Controllers\SubdomainController;
+use App\Controllers\UserController;
 use App\Middleware\AuthMiddleware;
 
 $auth = [fn($req) => AuthMiddleware::handle($req)];
@@ -27,19 +28,27 @@ $router->post('/api/v1/install/admin',       [InstallController::class, 'admin']
 $router->post('/api/v1/install/notify',      [InstallController::class, 'notify']);
 $router->post('/api/v1/install/complete',    [InstallController::class, 'complete']);
 
-// === 2. 身份认证与凭据接口 ===
-$router->post('/api/v1/auth/captcha', [AuthController::class, 'captcha']);
-$router->post('/api/v1/auth/login',   [AuthController::class, 'login']);
-$router->get('/api/v1/auth/me',       [AuthController::class, 'me'], $auth);
-$router->post('/api/v1/auth/logout',  [AuthController::class, 'logout'], $auth);
+// === 2. 身份认证、个人资料与凭据接口 ===
+$router->post('/api/v1/auth/captcha',  [AuthController::class, 'captcha']);
+$router->post('/api/v1/auth/login',    [AuthController::class, 'login']);
+$router->get('/api/v1/auth/me',        [AuthController::class, 'me'], $auth);
+$router->put('/api/v1/auth/profile',   [AuthController::class, 'updateProfile'], $auth);
+$router->put('/api/v1/auth/password',  [AuthController::class, 'updatePassword'], $auth);
+$router->post('/api/v1/auth/logout',   [AuthController::class, 'logout'], $auth);
 
-// === 3. 综合仪表盘数据 ===
+// === 3. 多用户团队管理接口 (强制绑定邮箱，限 admin 角色) ===
+$router->get('/api/v1/users',          [UserController::class, 'index'], $auth);
+$router->post('/api/v1/users',         [UserController::class, 'store'], $auth);
+$router->put('/api/v1/users/{id}',     [UserController::class, 'update'], $auth);
+$router->delete('/api/v1/users/{id}',  [UserController::class, 'destroy'], $auth);
+
+// === 4. 综合仪表盘数据 ===
 $router->get('/api/v1/dashboard/stats',         [DashboardController::class, 'stats'], $auth);
 $router->get('/api/v1/dashboard/chart/trends',  [DashboardController::class, 'trends'], $auth);
 $router->get('/api/v1/dashboard/chart/changes', [DashboardController::class, 'changes'], $auth);
 $router->get('/api/v1/dashboard/timeline',      [DashboardController::class, 'timeline'], $auth);
 
-// === 4. 资产主域名管理 ===
+// === 5. 资产主域名管理 ===
 $router->get('/api/v1/domains',                 [DomainController::class, 'index'], $auth);
 $router->post('/api/v1/domains',                [DomainController::class, 'store'], $auth);
 $router->put('/api/v1/domains/{id}',            [DomainController::class, 'update'], $auth);
@@ -49,12 +58,12 @@ $router->post('/api/v1/domains/{id}/proxy-test',[DomainController::class, 'testP
 $router->post('/api/v1/domains/{id}/resolve-names', [SubdomainController::class, 'resolveDomainNames'], $auth);
 $router->get('/api/v1/subdomains/export',       [DomainController::class, 'exportCsv'], $auth);
 
-// === 5. 子域名资产与名称识别 ===
+// === 6. 子域名资产与名称识别 ===
 $router->get('/api/v1/subdomains',                    [SubdomainController::class, 'index'], $auth);
 $router->put('/api/v1/subdomains/{id}/alias',         [SubdomainController::class, 'updateAlias'], $auth);
 $router->post('/api/v1/subdomains/{id}/resolve-name', [SubdomainController::class, 'resolveSingleName'], $auth);
 
-// === 6. 出口网络代理池与策略组 ===
+// === 7. 出口网络代理池与策略组 ===
 $router->get('/api/v1/proxies',             [ProxyController::class, 'index'], $auth);
 $router->post('/api/v1/proxies',            [ProxyController::class, 'store'], $auth);
 $router->put('/api/v1/proxies/{id}',        [ProxyController::class, 'update'], $auth);
@@ -67,17 +76,17 @@ $router->get('/api/v1/proxy-groups',        [ProxyGroupController::class, 'index
 $router->post('/api/v1/proxy-groups',       [ProxyGroupController::class, 'store'], $auth);
 $router->delete('/api/v1/proxy-groups/{id}',[ProxyGroupController::class, 'destroy'], $auth);
 
-// === 7. 多渠道告警通道 ===
+// === 8. 多渠道告警通道 ===
 $router->get('/api/v1/notify-channels',          [NotifyController::class, 'index'], $auth);
 $router->post('/api/v1/notify-channels',         [NotifyController::class, 'store'], $auth);
 $router->delete('/api/v1/notify-channels/{id}',  [NotifyController::class, 'destroy'], $auth);
 $router->post('/api/v1/notify-channels/{id}/test',[NotifyController::class, 'testChannel'], $auth);
 
-// === 8. 巡检任务与系统运行流水日志 (带分页) ===
+// === 9. 巡检任务与系统运行流水日志 ===
 $router->get('/api/v1/logs/tasks',  [LogController::class, 'getTasks'], $auth);
 $router->get('/api/v1/logs/stages', [LogController::class, 'getStages'], $auth);
 
-// === 9. 系统全局设置与字典 ===
+// === 10. 系统全局设置与字典 ===
 $router->get('/api/v1/settings',            [SettingController::class, 'getSettings'], $auth);
 $router->post('/api/v1/settings',           [SettingController::class, 'saveSetting'], $auth);
 $router->get('/api/v1/settings/audit-logs', [SettingController::class, 'auditLogs'], $auth);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>SRC 资产检测站 - 全景资产监控平台</title>
-  <!-- CDN 资源: Element Plus, ECharts, Google Fonts -->
+  <!-- CDN 资源: Element Plus, Google Fonts -->
   <link rel="stylesheet" href="https://unpkg.com/element-plus@2.6.3/dist/index.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -121,6 +121,14 @@
     }
     .content-area { padding: 24px 28px; max-width: 1400px; width: 100%; box-sizing: border-box; }
 
+    .user-profile-badge {
+      display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 10px;
+      border-radius: var(--r-full); background: var(--brand-50); border: 1px solid var(--border);
+      transition: all 0.2s;
+    }
+    .user-profile-badge:hover { background: var(--brand-100); }
+    .user-avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--brand-500); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+
     /* 统计卡片与面板 */
     .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
     .stat-box {
@@ -146,16 +154,14 @@
     .action-link { background: none; border: none; color: var(--brand-600); cursor: pointer; font-size: 12px; margin-right: 8px; }
     .action-link.danger { color: var(--danger); }
     .flex-1 { flex: 1; }
-    .logout-btn { color: var(--danger); font-size: 13px; cursor: pointer; background: none; border: none; }
+    .logout-btn { color: var(--danger); font-size: 13px; cursor: pointer; background: none; border: none; margin-left: 16px; }
 
-    /* 分页与过滤控制栏 */
     .pagination-bar {
       display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px;
       border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2);
     }
     .page-nav { display: flex; gap: 8px; align-items: center; }
 
-    /* 渠道卡片栅格 */
     .channel-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;
     }
@@ -193,7 +199,6 @@
           </span>
         </div>
 
-        <!-- 步骤 1: 环境检测 -->
         <div v-if="currentStep === 1">
           <div class="form-item" v-for="ext in envData.extensions" :key="ext.name" style="background:#fff; padding:10px 14px; border-radius:8px; border:1px solid var(--border); flex-direction:row; justify-content:space-between; align-items:center;">
             <span>{{ ext.name }} - {{ ext.description }}</span>
@@ -201,7 +206,6 @@
           </div>
         </div>
 
-        <!-- 步骤 2: 数据库设置 -->
         <div v-if="currentStep === 2">
           <div class="form-grid-2col">
             <div class="form-item">
@@ -233,14 +237,13 @@
           </div>
         </div>
 
-        <!-- 步骤 3: 管理员设置 -->
         <div v-if="currentStep === 3">
           <div class="form-item">
             <label>管理员登录名</label>
             <input v-model="adminForm.username" class="input-theme" placeholder="admin">
           </div>
           <div class="form-item">
-            <label>管理员通知邮箱</label>
+            <label>管理员通知邮箱 (强制绑定有效邮箱)</label>
             <input v-model="adminForm.email" class="input-theme" placeholder="admin@2016xlx.cn">
           </div>
           <div class="form-grid-split">
@@ -255,7 +258,6 @@
           </div>
         </div>
 
-        <!-- 步骤 4: 告警通道 -->
         <div v-if="currentStep === 4">
           <div class="form-item">
             <label>企业微信群机器人 Webhook (可选)</label>
@@ -263,7 +265,6 @@
           </div>
         </div>
 
-        <!-- 步骤 5: 完成部署 -->
         <div v-if="currentStep === 5" style="text-align:center; padding:20px 0;">
           <div style="font-size:48px; color:var(--success);">✓</div>
           <h3>系统安装部署就绪</h3>
@@ -293,8 +294,8 @@
 
         <form @submit.prevent="handleLogin">
           <div class="form-item">
-            <label>管理员登录名 / 邮箱</label>
-            <input v-model="loginForm.username" class="input-theme" placeholder="请输入管理员账号" required>
+            <label>登录账号 (支持用户名或绑定邮箱)</label>
+            <input v-model="loginForm.username" class="input-theme" placeholder="请输入用户名或已绑定邮箱" required>
           </div>
           <div class="form-item">
             <label>登录密码</label>
@@ -334,6 +335,9 @@
           <button class="menu-btn" :class="{ active: currentTab === 'logs' }" @click="currentTab = 'logs'; fetchTaskLogs();">
             📜 任务与运行日志
           </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'users' }" @click="currentTab = 'users'; fetchUsers();">
+            👥 多用户团队管理
+          </button>
           <button class="menu-btn" :class="{ active: currentTab === 'proxies' }" @click="currentTab = 'proxies'">
             🛡️ 网络代理池
           </button>
@@ -345,15 +349,18 @@
           </button>
         </nav>
         <div style="margin-top:auto; padding:16px; border-top:1px solid var(--border); font-size:12px; color:var(--text-3);">
-          节点调度引擎就绪 (v1.2.0)
+          多用户权限体系就绪 (v1.2.0)
         </div>
       </aside>
 
       <!-- 主工作区 -->
       <main class="main-body">
         <header class="topbar">
-          <div style="font-size:13px; color:var(--text-2);">
-            当前管理账号: <strong>{{ userInfo?.username || '管理员' }}</strong>
+          <div class="user-profile-badge" @click="openProfileModal" title="点击修改个人用户名、密码与绑定邮箱">
+            <div class="user-avatar">{{ (userInfo?.username || 'A')[0].toUpperCase() }}</div>
+            <span style="font-size:13px; font-weight:600; color:var(--text-1);">{{ userInfo?.username || '管理员' }}</span>
+            <span class="soft-tag brand" style="font-size:10px;">{{ userInfo?.role || 'admin' }}</span>
+            <span style="font-size:11px; color:var(--text-3);">⚙️ 修改资料/密码</span>
           </div>
           <div class="flex-1"></div>
           <button class="logout-btn" @click="handleLogout">安全退出 ➔</button>
@@ -446,7 +453,7 @@
             </div>
           </div>
 
-          <!-- Tab 3: 任务与系统运行日志 (分页显示) -->
+          <!-- Tab 3: 任务与系统运行日志 -->
           <div v-if="currentTab === 'logs'">
             <div class="card-panel">
               <div class="panel-head">
@@ -454,9 +461,7 @@
                   <h4 class="panel-title">巡检执行批次历史</h4>
                   <span style="font-size:12px; color:var(--text-3);">查看所有全网主动爆破与被动采集任务历史状态</span>
                 </div>
-                <div style="display:flex; gap:10px;">
-                  <button class="ghost-btn-sm" @click="fetchTaskLogs">刷新任务</button>
-                </div>
+                <button class="ghost-btn-sm" @click="fetchTaskLogs">刷新任务</button>
               </div>
 
               <el-table :data="taskLogList" v-loading="taskLogLoading" style="width: 100%">
@@ -551,7 +556,65 @@
             </div>
           </div>
 
-          <!-- Tab 4: 代理池管理 -->
+          <!-- Tab 4: 多用户团队管理 (强制绑定邮箱，多用户配置) -->
+          <div v-if="currentTab === 'users'">
+            <div class="card-panel">
+              <div class="panel-head">
+                <div>
+                  <h4 class="panel-title">多用户团队成员管理</h4>
+                  <span style="font-size:12px; color:var(--text-3);">支持添加团队安全成员、分配权限角色、强制绑定电子邮箱</span>
+                </div>
+                <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddUserModal = true">+ 新增团队成员</button>
+              </div>
+
+              <el-table :data="userList" v-loading="userListLoading" style="width: 100%">
+                <el-table-column prop="id" label="UID" width="70" />
+                <el-table-column prop="username" label="登录用户名" min-width="140">
+                  <template #default="{ row }">
+                    <strong>{{ row.username }}</strong>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="email" label="已绑定电子邮箱 (强制)" min-width="200">
+                  <template #default="{ row }">
+                    <code>{{ row.email }}</code>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="role" label="角色权限" width="110">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.role === 'admin' ? 'brand' : 'pass'">
+                      {{ row.role === 'admin' ? '超级管理' : '普通成员' }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.status === 1 ? 'pass' : 'fail'">
+                      {{ row.status === 1 ? '正常' : '已冻结' }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="created_at" label="加入时间" width="160" />
+                <el-table-column label="操作" width="180" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="openEditUser(row)">编辑/改密</button>
+                    <button class="action-link danger" :disabled="row.id === userInfo?.id" @click="handleDeleteUser(row)">
+                      {{ row.id === userInfo?.id ? '自身账号' : '注销' }}
+                    </button>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <div class="pagination-bar">
+                <span>共计 {{ userTotal }} 位成员 · 当前第 {{ userPage }} 页</span>
+                <div class="page-nav">
+                  <button class="ghost-btn-sm" :disabled="userPage <= 1" @click="userPage--; fetchUsers();">上一页</button>
+                  <button class="ghost-btn-sm" :disabled="userPage >= Math.ceil(userTotal / userPageSize)" @click="userPage++; fetchUsers();">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 5: 代理池管理 -->
           <div v-if="currentTab === 'proxies'">
             <div class="card-panel">
               <div class="panel-head">
@@ -586,7 +649,7 @@
             </div>
           </div>
 
-          <!-- Tab 5: 告警通道管理 (全面支持 6 大主流渠道) -->
+          <!-- Tab 6: 告警通道管理 -->
           <div v-if="currentTab === 'channels'">
             <div class="card-panel">
               <div class="panel-head">
@@ -597,7 +660,6 @@
                 <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddChannelModal = true">+ 新建告警通道</button>
               </div>
 
-              <!-- 渠道卡片栅格展示 -->
               <div class="channel-grid">
                 <div v-for="chan in channelList" :key="chan.id" class="chan-card">
                   <div class="chan-header">
@@ -617,15 +679,11 @@
                     <button class="action-link danger" @click="handleDeleteChannel(chan)">删除</button>
                   </div>
                 </div>
-
-                <div v-if="channelList.length === 0" style="grid-column: 1/-1; text-align:center; padding:30px; color:var(--text-3); font-size:13px;">
-                  暂无告警渠道，请点击右上角「新建告警通道」添加。
-                </div>
               </div>
             </div>
           </div>
 
-          <!-- Tab 6: 系统设置 -->
+          <!-- Tab 7: 系统设置 -->
           <div v-if="currentTab === 'settings'">
             <div class="card-panel">
               <h4 class="panel-title" style="margin-bottom:12px;">内置子域名字典维护</h4>
@@ -642,7 +700,114 @@
         </div>
       </main>
 
-      <!-- 弹窗 1: 新增主域名 -->
+      <!-- 弹窗: 当前用户修改用户名、密码与强制绑定邮箱 -->
+      <el-dialog v-model="showProfileModal" title="个人账户安全与资料修改" width="480px">
+        <el-tabs v-model="profileTab">
+          <el-tab-pane label="基本资料 (用户名/邮箱)" name="profile">
+            <div class="form-item">
+              <label>登录用户名</label>
+              <input v-model="profileForm.username" class="input-theme" placeholder="输入新登录用户名">
+            </div>
+            <div class="form-item">
+              <label>绑定电子邮箱 (强制有效)</label>
+              <input v-model="profileForm.email" class="input-theme" placeholder="your_email@company.com">
+              <span style="font-size:11px; color:var(--text-3); margin-top:4px;">系统强制绑定邮箱，用于异常告警接收与凭据恢复。</span>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+              <button class="ghost-btn" @click="showProfileModal = false">取消</button>
+              <button class="primary-btn" style="width:auto;" :disabled="profileSaving" @click="submitUpdateProfile">
+                {{ profileSaving ? '保存中...' : '保存资料' }}
+              </button>
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="修改登录密码" name="password">
+            <div class="form-item">
+              <label>当前旧密码</label>
+              <input v-model="passwordForm.old_password" type="password" class="input-theme" placeholder="请输入当前正在使用的密码">
+            </div>
+            <div class="form-item">
+              <label>新密码 (需不少于8位含大小写与数字)</label>
+              <input v-model="passwordForm.new_password" type="password" class="input-theme" placeholder="••••••••">
+            </div>
+            <div class="form-item">
+              <label>确认新密码</label>
+              <input v-model="passwordForm.new_password_confirmation" type="password" class="input-theme" placeholder="••••••••">
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+              <button class="ghost-btn" @click="showProfileModal = false">取消</button>
+              <button class="primary-btn" style="width:auto;" :disabled="passwordSaving" @click="submitUpdatePassword">
+                {{ passwordSaving ? '修改中...' : '确认修改密码' }}
+              </button>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-dialog>
+
+      <!-- 弹窗: 新增多用户团队成员 -->
+      <el-dialog v-model="showAddUserModal" title="新增团队成员账号" width="460px">
+        <div class="form-item">
+          <label>登录用户名</label>
+          <input v-model="addUserForm.username" class="input-theme" placeholder="如: sec_analyst">
+        </div>
+        <div class="form-item">
+          <label>绑定电子邮箱 (强制必填)</label>
+          <input v-model="addUserForm.email" class="input-theme" placeholder="member@company.com">
+        </div>
+        <div class="form-item">
+          <label>初始登录密码 (需含大小写与数字)</label>
+          <input v-model="addUserForm.password" type="password" class="input-theme" placeholder="••••••••">
+        </div>
+        <div class="form-item">
+          <label>角色权限</label>
+          <select v-model="addUserForm.role" class="input-theme">
+            <option value="user">普通成员 (只读与名下资产管理)</option>
+            <option value="admin">超级管理 (拥有全部管理权限)</option>
+          </select>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+          <button class="ghost-btn" @click="showAddUserModal = false">取消</button>
+          <button class="primary-btn" style="width:auto;" @click="submitAddUser">确认添加成员</button>
+        </div>
+      </el-dialog>
+
+      <!-- 弹窗: 编辑成员与重置密码 -->
+      <el-dialog v-model="showEditUserModal" title="编辑团队成员" width="460px">
+        <div class="form-item">
+          <label>用户名</label>
+          <input v-model="editUserForm.username" class="input-theme">
+        </div>
+        <div class="form-item">
+          <label>电子邮箱 (强制有效)</label>
+          <input v-model="editUserForm.email" class="input-theme">
+        </div>
+        <div class="form-grid-split">
+          <div class="form-item">
+            <label>角色</label>
+            <select v-model="editUserForm.role" class="input-theme">
+              <option value="user">普通成员</option>
+              <option value="admin">超级管理</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label>账号状态</label>
+            <select v-model.number="editUserForm.status" class="input-theme">
+              <option :value="1">正常激活</option>
+              <option :value="0">冻结停用</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-item">
+          <label>重置密码 (留空表示不修改)</label>
+          <input v-model="editUserForm.password" type="password" class="input-theme" placeholder="若无需改密请留空">
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+          <button class="ghost-btn" @click="showEditUserModal = false">取消</button>
+          <button class="primary-btn" style="width:auto;" @click="submitEditUser">保存修改</button>
+        </div>
+      </el-dialog>
+
+      <!-- 弹窗: 新增主域名 -->
       <el-dialog v-model="showAddDomainModal" title="新增主域名监控" width="460px">
         <div class="form-item">
           <label>主域名 (FQDN)</label>
@@ -670,7 +835,7 @@
         </div>
       </el-dialog>
 
-      <!-- 弹窗 2: 新增代理 -->
+      <!-- 弹窗: 新增代理 -->
       <el-dialog v-model="showAddProxyModal" title="新增网络代理节点" width="460px">
         <div class="form-item">
           <label>节点名称</label>
@@ -701,7 +866,7 @@
         </div>
       </el-dialog>
 
-      <!-- 弹窗 3: 全功能告警渠道配置 (全面支持 6 大主流渠道) -->
+      <!-- 弹窗: 全功能告警渠道配置 -->
       <el-dialog v-model="showAddChannelModal" title="新建告警推送通道" width="520px">
         <div class="form-item">
           <label>渠道名称</label>
@@ -720,13 +885,11 @@
           </select>
         </div>
 
-        <!-- 动态配置项 1: 企业微信 -->
         <div v-if="addChannelForm.type === 'wecom'" class="form-item">
           <label>企业微信机器人 Webhook 地址</label>
           <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
         </div>
 
-        <!-- 动态配置项 2: 钉钉 -->
         <div v-if="addChannelForm.type === 'dingtalk'">
           <div class="form-item">
             <label>钉钉机器人 Webhook 地址</label>
@@ -738,7 +901,6 @@
           </div>
         </div>
 
-        <!-- 动态配置项 3: 飞书 -->
         <div v-if="addChannelForm.type === 'feishu'">
           <div class="form-item">
             <label>飞书机器人 Webhook 地址</label>
@@ -750,19 +912,17 @@
           </div>
         </div>
 
-        <!-- 动态配置项 4: Telegram -->
         <div v-if="addChannelForm.type === 'telegram'">
           <div class="form-item">
             <label>Telegram Bot Token</label>
             <input v-model="addChannelForm.config.bot_token" class="input-theme" placeholder="123456789:AAH••••••••••••••••••••••••">
           </div>
           <div class="form-item">
-            <label>Chat ID (群组或个人ID)</label>
+            <label>Chat ID</label>
             <input v-model="addChannelForm.config.chat_id" class="input-theme" placeholder="-100123456789 或 @my_channel">
           </div>
         </div>
 
-        <!-- 动态配置项 5: SMTP 邮件 -->
         <div v-if="addChannelForm.type === 'email'">
           <div class="form-grid-2col">
             <div class="form-item">
@@ -785,12 +945,11 @@
             </div>
           </div>
           <div class="form-item">
-            <label>收信人邮箱 (默认同发信账号)</label>
+            <label>收信人邮箱</label>
             <input v-model="addChannelForm.config.to_email" class="input-theme" placeholder="sec_admin@company.com">
           </div>
         </div>
 
-        <!-- 动态配置项 6: 通用 Webhook -->
         <div v-if="addChannelForm.type === 'webhook'" class="form-item">
           <label>接收端点 URL</label>
           <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://api.yourdomain.com/alerts/webhook">
@@ -817,7 +976,7 @@
         const token = ref(localStorage.getItem('src_token') || '');
         const userInfo = ref(JSON.parse(localStorage.getItem('src_user') || 'null'));
 
-        // 安装向导状态
+        // 安装向导
         const currentStep = ref(1);
         const loading = ref(false);
         const testingDb = ref(false);
@@ -828,12 +987,12 @@
         const adminForm = ref({ username: 'admin', email: 'admin@2016xlx.cn', password: '', password_confirmation: '' });
         const wecomWebhook = ref('');
 
-        // 登录面板状态
+        // 登录面板
         const loginForm = ref({ username: '', password: '', captcha_code: '', captcha_key: '' });
         const captchaSvg = ref('');
         const loginLoading = ref(false);
 
-        // 控制台状态
+        // 控制台
         const currentTab = ref('dashboard');
         const stats = ref({});
         const timelineLogs = ref([]);
@@ -843,7 +1002,26 @@
         const dictionary = ref([]);
         const newWord = ref('');
 
-        // 任务与系统运行日志分页状态
+        // 个人资料与修改密码
+        const showProfileModal = ref(false);
+        const profileTab = ref('profile');
+        const profileSaving = ref(false);
+        const passwordSaving = ref(false);
+        const profileForm = ref({ username: '', email: '' });
+        const passwordForm = ref({ old_password: '', new_password: '', new_password_confirmation: '' });
+
+        // 多用户管理
+        const userList = ref([]);
+        const userTotal = ref(0);
+        const userPage = ref(1);
+        const userPageSize = ref(10);
+        const userListLoading = ref(false);
+        const showAddUserModal = ref(false);
+        const addUserForm = ref({ username: '', email: '', password: '', role: 'user' });
+        const showEditUserModal = ref(false);
+        const editUserForm = ref({ id: null, username: '', email: '', role: 'user', status: 1, password: '' });
+
+        // 任务与流水日志分页
         const taskLogList = ref([]);
         const taskLogTotal = ref(0);
         const taskLogPage = ref(1);
@@ -864,23 +1042,11 @@
         const showAddProxyModal = ref(false);
         const addProxyForm = ref({ name: '', host: '', port: 8080, protocol: 'http' });
         
-        // 全功能告警渠道配置表单
         const showAddChannelModal = ref(false);
         const testingChanId = ref(null);
         const addChannelForm = ref({
-          name: '',
-          type: 'wecom',
-          config: {
-            webhook_url: '',
-            secret: '',
-            bot_token: '',
-            chat_id: '',
-            smtp_host: 'smtp.exmail.qq.com',
-            smtp_port: 465,
-            smtp_user: '',
-            smtp_pass: '',
-            to_email: ''
-          }
+          name: '', type: 'wecom',
+          config: { webhook_url: '', secret: '', bot_token: '', chat_id: '', smtp_host: 'smtp.exmail.qq.com', smtp_port: 465, smtp_user: '', smtp_pass: '', to_email: '' }
         });
 
         const setupAxiosAuth = () => {
@@ -913,9 +1079,7 @@
 
         const fetchEnvCheck = async () => {
           try {
-            const { data } = await axios.post('/api/v1/install/check-env', {}, {
-              headers: { 'X-Install-Token': installToken.value }
-            });
+            const { data } = await axios.post('/api/v1/install/check-env', {}, { headers: { 'X-Install-Token': installToken.value } });
             envData.value = data.data;
           } catch(e) {}
         };
@@ -923,9 +1087,7 @@
         const handleTestDb = async () => {
           testingDb.value = true;
           try {
-            const { data } = await axios.post('/api/v1/install/test-db', dbForm.value, {
-              headers: { 'X-Install-Token': installToken.value }
-            });
+            const { data } = await axios.post('/api/v1/install/test-db', dbForm.value, { headers: { 'X-Install-Token': installToken.value } });
             ElementPlus.ElMessage.success(data.msg || '数据库网络连接成功');
           } catch(err) {
             ElementPlus.ElMessage.error(err.response?.data?.msg || '数据库连接失败');
@@ -951,7 +1113,7 @@
                 channels.push({ name: '企业微信群机器人', type: 'wecom', config: { webhook_url: wecomWebhook.value.trim() } });
               }
               if (channels.length > 0) {
-                await axios.post('/api/v1/notify/channels', { channels }, { headers: { 'X-Install-Token': installToken.value } });
+                await axios.post('/api/v1/notify-channels', { channels }, { headers: { 'X-Install-Token': installToken.value } });
               }
               await axios.post('/api/v1/install/complete', {}, { headers: { 'X-Install-Token': installToken.value } });
               currentStep.value = 5;
@@ -983,7 +1145,7 @@
             localStorage.setItem('src_token', token.value);
             localStorage.setItem('src_user', JSON.stringify(userInfo.value));
             setupAxiosAuth();
-            ElementPlus.ElMessage.success('登录成功，正在加载控制台');
+            ElementPlus.ElMessage.success('登录成功，欢迎进入控制台');
             initConsole();
           } catch(err) {
             ElementPlus.ElMessage.error(err.response?.data?.msg || '登录失败，请核对信息');
@@ -1008,9 +1170,119 @@
           fetchDomains();
           fetchTaskLogs();
           fetchStageLogs();
+          fetchUsers();
           fetchProxies();
           fetchChannels();
           fetchSettings();
+        };
+
+        // 个人中心逻辑
+        const openProfileModal = () => {
+          profileForm.value.username = userInfo.value?.username || '';
+          profileForm.value.email = userInfo.value?.email || '';
+          passwordForm.value.old_password = '';
+          passwordForm.value.new_password = '';
+          passwordForm.value.new_password_confirmation = '';
+          showProfileModal.value = true;
+        };
+
+        const submitUpdateProfile = async () => {
+          if (!profileForm.value.username.trim() || !profileForm.value.email.trim()) {
+            ElementPlus.ElMessage.warning('用户名与绑定邮箱均不可为空');
+            return;
+          }
+          profileSaving.value = true;
+          try {
+            const { data } = await axios.put('/api/v1/auth/profile', profileForm.value);
+            ElementPlus.ElMessage.success('个人资料与绑定邮箱已更新');
+            userInfo.value.username = data.data.username;
+            userInfo.value.email = data.data.email;
+            localStorage.setItem('src_user', JSON.stringify(userInfo.value));
+            showProfileModal.value = false;
+          } catch(e) {
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '更新资料失败');
+          } finally {
+            profileSaving.value = false;
+          }
+        };
+
+        const submitUpdatePassword = async () => {
+          if (!passwordForm.value.old_password || !passwordForm.value.new_password) {
+            ElementPlus.ElMessage.warning('请输入当前密码与新密码');
+            return;
+          }
+          if (passwordForm.value.new_password !== passwordForm.value.new_password_confirmation) {
+            ElementPlus.ElMessage.warning('两次输入的新密码不一致');
+            return;
+          }
+          passwordSaving.value = true;
+          try {
+            await axios.put('/api/v1/auth/password', passwordForm.value);
+            ElementPlus.ElMessage.success('密码修改成功，请使用新密码重新登录');
+            showProfileModal.value = false;
+            handleLogout();
+          } catch(e) {
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '修改密码失败');
+          } finally {
+            passwordSaving.value = false;
+          }
+        };
+
+        // 多用户管理逻辑
+        const fetchUsers = async () => {
+          userListLoading.value = true;
+          try {
+            const { data } = await axios.get('/api/v1/users', {
+              params: { page: userPage.value, page_size: userPageSize.value }
+            });
+            userList.value = data.data.list;
+            userTotal.value = data.data.total;
+          } catch(e) {} finally {
+            userListLoading.value = false;
+          }
+        };
+
+        const submitAddUser = async () => {
+          if (!addUserForm.value.username.trim() || !addUserForm.value.email.trim() || !addUserForm.value.password) {
+            ElementPlus.ElMessage.warning('请补全用户名、强制绑定邮箱与初始密码');
+            return;
+          }
+          try {
+            await axios.post('/api/v1/users', addUserForm.value);
+            ElementPlus.ElMessage.success('团队成员添加成功');
+            showAddUserModal.value = false;
+            fetchUsers();
+            addUserForm.value = { username: '', email: '', password: '', role: 'user' };
+          } catch(e) {
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '添加成员失败');
+          }
+        };
+
+        const openEditUser = (row) => {
+          editUserForm.value = { id: row.id, username: row.username, email: row.email, role: row.role, status: row.status, password: '' };
+          showEditUserModal.value = true;
+        };
+
+        const submitEditUser = async () => {
+          try {
+            await axios.put(`/api/v1/users/${editUserForm.value.id}`, editUserForm.value);
+            ElementPlus.ElMessage.success('成员资料已更新');
+            showEditUserModal.value = false;
+            fetchUsers();
+          } catch(e) {
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '更新失败');
+          }
+        };
+
+        const handleDeleteUser = (row) => {
+          if (confirm(`确认注销并删除团队成员 [${row.username}] 吗？`)) {
+            axios.delete(`/api/v1/users/${row.id}`).then(() => {
+              ElementPlus.ElMessage.success('成员账号已移除');
+              fetchUsers();
+            }).catch(e => {
+              ElementPlus.ElMessage.error(e.response?.data?.msg || '操作被拒绝');
+            });
+          }
         };
 
         const fetchDashboard = async () => {
@@ -1047,11 +1319,7 @@
         const fetchStageLogs = async () => {
           stageLogLoading.value = true;
           try {
-            const params = {
-              page: stageLogPage.value,
-              page_size: stageLogPageSize.value,
-              level: stageFilterLevel.value
-            };
+            const params = { page: stageLogPage.value, page_size: stageLogPageSize.value, level: stageFilterLevel.value };
             if (stageFilterTaskId.value) params.task_id = stageFilterTaskId.value;
             const { data } = await axios.get('/api/v1/logs/stages', { params });
             stageLogList.value = data.data.list;
@@ -1142,39 +1410,20 @@
           }
         };
 
-        // 告警渠道辅助方法
         const getChannelIcon = (type) => {
-          const map = {
-            wecom: '💬',
-            dingtalk: '📌',
-            feishu: '🕊️',
-            telegram: '✈️',
-            email: '📧',
-            webhook: '🌐'
-          };
+          const map = { wecom: '💬', dingtalk: '📌', feishu: '🕊️', telegram: '✈️', email: '📧', webhook: '🌐' };
           return map[type] || '🔔';
         };
 
         const formatChannelType = (type) => {
-          const map = {
-            wecom: '企业微信群机器人',
-            dingtalk: '钉钉群机器人',
-            feishu: '飞书群机器人',
-            telegram: 'Telegram 机器人',
-            email: 'SMTP 邮件推送',
-            webhook: '通用 Webhook'
-          };
+          const map = { wecom: '企业微信群机器人', dingtalk: '钉钉群机器人', feishu: '飞书群机器人', telegram: 'Telegram 机器人', email: 'SMTP 邮件推送', webhook: '通用 Webhook' };
           return map[type] || type.toUpperCase();
         };
 
         const getChannelSummary = (chan) => {
           const cfg = chan.config_parsed || {};
-          if (chan.type === 'email') {
-            return `发件: ${cfg.smtp_user || '-'} (接收: ${cfg.to_email || cfg.smtp_user || '-'})`;
-          }
-          if (chan.type === 'telegram') {
-            return `Bot Token: ${cfg.bot_token || '-'} (Chat: ${cfg.chat_id || '-'})`;
-          }
+          if (chan.type === 'email') return `发件: ${cfg.smtp_user || '-'} (接收: ${cfg.to_email || cfg.smtp_user || '-'})`;
+          if (chan.type === 'telegram') return `Bot Token: ${cfg.bot_token || '-'} (Chat: ${cfg.chat_id || '-'})`;
           return cfg.webhook_url || chan.config || '-';
         };
 
@@ -1254,6 +1503,8 @@
           handleTestDb, handleNextInstall,
           loginForm, captchaSvg, loginLoading, handleLogin, handleLogout, fetchCaptcha,
           currentTab, stats, timelineLogs, domainList, proxyList, channelList, dictionary, newWord,
+          showProfileModal, profileTab, profileSaving, passwordSaving, profileForm, passwordForm, openProfileModal, submitUpdateProfile, submitUpdatePassword,
+          userList, userTotal, userPage, userPageSize, userListLoading, showAddUserModal, addUserForm, showEditUserModal, editUserForm, fetchUsers, submitAddUser, openEditUser, submitEditUser, handleDeleteUser,
           taskLogList, taskLogTotal, taskLogPage, taskLogPageSize, taskLogLoading, fetchTaskLogs,
           stageLogList, stageLogTotal, stageLogPage, stageLogPageSize, stageLogLoading, stageFilterLevel, stageFilterTaskId, fetchStageLogs, filterStagesByTask,
           fetchDashboard, fetchDomains, handleScanDomain, exportDomainCsv, handleDeleteDomain,
