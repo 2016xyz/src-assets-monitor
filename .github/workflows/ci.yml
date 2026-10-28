@@ -44,6 +44,9 @@ jobs:
       - name: Run CDN Anycast Drift & Anti-Flapping Tests
         run: php tests/CdnDriftAntiFlappingTest.php
 
+      - name: Run Asset Portrait & IP Geo Tests
+        run: php tests/AssetPortraitAndGeoTest.php
+
   docker-lint:
     name: Docker Configuration Lint
     runs-on: ubuntu-latest
