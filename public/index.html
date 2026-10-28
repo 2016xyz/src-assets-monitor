@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>SRC 资产检测站 - 自动化监控平台</title>
-  <!-- Google Fonts & Element Plus CDN -->
+  <title>SRC 资产检测站 - 全景资产监控平台</title>
+  <!-- CDN 资源: Element Plus, ECharts, Google Fonts -->
   <link rel="stylesheet" href="https://unpkg.com/element-plus@2.6.3/dist/index.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,12 +16,12 @@
       --brand-300: #93C5FD; --brand-400: #60A5FA; --brand-500: #3B82F6;
       --brand-600: #2563EB; --brand-700: #1D4ED8;
       --success: #10B981; --warning: #F59E0B; --danger: #EF4444; --info: #38BDF8;
-      --bg: #F5F8FF; --card: #FFFFFF;
+      --bg: #F5F8FF; --bg-deep: #EAF2FF; --card: #FFFFFF;
       --text-1: #0F172A; --text-2: #475569; --text-3: #94A3B8;
       --border: rgba(59, 130, 246, 0.10);
       --border-strong: rgba(59, 130, 246, 0.18);
       --border-glass: rgba(255, 255, 255, 0.60);
-      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px;
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px; --r-full: 9999px;
       --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 2px 8px rgba(59,130,246,0.06);
       --shadow-md: 0 4px 16px rgba(59,130,246,0.08);
       --shadow-lg: 0 12px 40px rgba(59,130,246,0.14);
@@ -34,7 +34,10 @@
       margin: 0; padding: 0; background: var(--bg); color: var(--text-1);
       font-family: 'Inter', -apple-system, sans-serif; -webkit-font-smoothing: antialiased;
     }
-    .install-wrap {
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+
+    /* 极光光斑呼吸背景 */
+    .aurora-wrap {
       position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
       background: var(--grad-bg); padding: 20px; overflow: hidden;
     }
@@ -43,71 +46,45 @@
     }
     .blob-1 { width: 450px; height: 450px; background: #93C5FD; top: -100px; left: -100px; }
     .blob-2 { width: 500px; height: 500px; background: #60A5FA; bottom: -150px; right: -100px; }
+
+    /* 玻璃拟态主卡片 */
     .glass-card {
       position: relative; z-index: 10; width: 100%; max-width: 760px;
       background: var(--grad-glass); backdrop-filter: blur(24px) saturate(160%);
       border: 1px solid var(--border-glass); border-radius: var(--r-xl);
       box-shadow: var(--shadow-lg); padding: 40px;
     }
-    .head { text-align: center; margin-bottom: 28px; }
+    .login-glass-card { max-width: 440px; padding: 36px 32px; }
+
+    .head { text-align: center; margin-bottom: 24px; }
     .logo-sq {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 52px; height: 52px; background: var(--grad-brand); border-radius: var(--r-md);
-      color: #fff; font-size: 26px; box-shadow: var(--shadow-sm); margin-bottom: 12px;
+      width: 48px; height: 48px; background: var(--grad-brand); border-radius: var(--r-md);
+      color: #fff; font-size: 24px; box-shadow: var(--shadow-sm); margin-bottom: 10px;
     }
     .brand-title { font-size: 22px; font-weight: 700; margin: 0 0 6px 0; }
     .brand-sub { font-size: 13px; color: var(--text-3); margin: 0; }
-    .steps-row { display: flex; justify-content: space-between; margin-bottom: 32px; }
-    .step-dot {
-      display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2);
-    }
-    .dot-num {
-      width: 28px; height: 28px; border-radius: 50%; background: #E2E8F0;
-      display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px;
-    }
-    .step-dot.active .dot-num { background: var(--brand-500); color: #fff; box-shadow: var(--shadow-glow); }
-    .step-dot.completed .dot-num { background: var(--success); color: #fff; }
-    .env-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 16px; background: rgba(255,255,255,0.7); border-radius: var(--r-md);
-      border: 1px solid var(--border); margin-bottom: 10px; font-size: 13px;
-    }
-    .soft-tag { padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
-    .soft-tag.pass { background: #ECFDF5; color: #10B981; }
-    .soft-tag.fail { background: #FEF2F2; color: #EF4444; }
-    .soft-tag.warn { background: #FFFBEB; color: #F59E0B; }
 
-    /* 表单栅格与独立字段排布 */
-    .form-grid-2col {
-      display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px;
-    }
-    .form-grid-split {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;
-    }
+    .form-grid-2col { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+    .form-grid-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
     .form-item { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
     .form-item label { font-size: 13px; font-weight: 500; color: var(--text-2); }
     .input-theme {
-      width: 100%; box-sizing: border-box;
-      padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--border-strong);
-      background: rgba(255,255,255,0.9); outline: none; font-size: 14px; color: var(--text-1);
-      transition: all 0.25s ease;
+      width: 100%; box-sizing: border-box; padding: 10px 14px; border-radius: var(--r-sm);
+      border: 1px solid var(--border-strong); background: rgba(255,255,255,0.9); outline: none; font-size: 14px;
     }
     .input-theme:focus { border-color: var(--brand-500); box-shadow: var(--shadow-glow); }
-    
-    .db-tools-row {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--border);
-    }
-    .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-2); }
 
-    .footer-bar {
-      display: flex; justify-content: space-between; margin-top: 32px; padding-top: 20px;
-      border-top: 1px solid var(--border);
+    .captcha-row { display: flex; gap: 10px; align-items: center; }
+    .captcha-box {
+      width: 120px; height: 40px; background: #EFF6FF; border: 1px solid var(--border-strong);
+      border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center; cursor: pointer;
     }
+
     .primary-btn {
       background: var(--grad-brand); color: #fff; border: none; padding: 10px 24px;
       border-radius: var(--r-md); font-size: 13px; font-weight: 500; cursor: pointer;
-      box-shadow: var(--shadow-sm); transition: all 0.25s ease;
+      box-shadow: var(--shadow-sm); transition: all 0.2s; width: 100%;
     }
     .primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-md); }
     .primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -116,53 +93,92 @@
       border-radius: var(--r-md); font-size: 13px; cursor: pointer; color: var(--text-2);
     }
     .ghost-btn-sm {
-      background: #fff; border: 1px solid var(--brand-300); padding: 7px 14px;
+      background: #fff; border: 1px solid var(--brand-300); padding: 6px 12px;
       border-radius: var(--r-sm); font-size: 12px; cursor: pointer; color: var(--brand-600);
-      font-weight: 500; transition: all 0.2s;
     }
-    .ghost-btn-sm:hover:not(:disabled) { background: var(--brand-50); }
-    .ghost-btn-sm:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* 控制台控制中心布局 */
+    .app-layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 240px; background: var(--grad-glass); backdrop-filter: blur(20px);
+      border-right: 1px solid var(--border); position: fixed; top: 0; bottom: 0; left: 0;
+      display: flex; flex-direction: column; z-index: 20;
+    }
+    .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 20px; }
+    .side-menu { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; }
+    .menu-btn {
+      display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--r-md);
+      color: var(--text-2); text-decoration: none; font-size: 13.5px; font-weight: 500; cursor: pointer;
+      border: none; background: none; text-align: left; transition: all 0.2s;
+    }
+    .menu-btn:hover { background: var(--brand-50); color: var(--brand-600); }
+    .menu-btn.active { background: var(--brand-100); color: var(--brand-700); font-weight: 600; }
+    
+    .main-body { margin-left: 240px; flex: 1; display: flex; flex-direction: column; }
+    .topbar {
+      height: 60px; background: rgba(255,255,255,0.75); backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center;
+      padding: 0 28px; position: sticky; top: 0; z-index: 15;
+    }
+    .content-area { padding: 24px 28px; max-width: 1400px; width: 100%; box-sizing: border-box; }
+
+    /* 统计卡片与表格 */
+    .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
+    .stat-box {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--r-md);
+      padding: 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 4px;
+    }
+    .stat-lbl { font-size: 12px; color: var(--text-3); }
+    .stat-val { font-size: 22px; font-weight: 700; color: var(--text-1); }
+
+    .card-panel {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg);
+      padding: 20px; box-shadow: var(--shadow-sm); margin-bottom: 24px;
+    }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .panel-title { font-size: 15px; font-weight: 600; margin: 0; }
+    
+    .soft-tag { padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 500; }
+    .soft-tag.pass { background: #ECFDF5; color: #10B981; }
+    .soft-tag.fail { background: #FEF2F2; color: #EF4444; }
+    .soft-tag.warn { background: #FFFBEB; color: #F59E0B; }
+    .soft-tag.brand { background: #EFF6FF; color: #2563EB; }
+
+    .action-link { background: none; border: none; color: var(--brand-600); cursor: pointer; font-size: 12px; margin-right: 8px; }
+    .action-link.danger { color: var(--danger); }
+    .flex-1 { flex: 1; }
+    .logout-btn { color: var(--danger); font-size: 13px; cursor: pointer; background: none; border: none; }
   </style>
 </head>
 <body>
   <div id="app">
-    <div class="install-wrap">
+    <!-- 状态 1: 未安装 -> 5步安装向导 -->
+    <div v-if="!isInstalled && !checkingInstall" class="aurora-wrap">
       <div class="aurora-blob blob-1"></div>
       <div class="aurora-blob blob-2"></div>
-
       <div class="glass-card">
         <div class="head">
           <div class="logo-sq">⚡</div>
           <h1 class="brand-title">SRC 资产检测站</h1>
-          <p class="brand-sub">系统部署向导与安全配置中心</p>
+          <p class="brand-sub">系统自动化部署向导</p>
         </div>
 
-        <div class="steps-row">
-          <div v-for="(s, i) in steps" :key="s" class="step-dot" :class="{ active: currentStep === i + 1, completed: currentStep > i + 1 }">
-            <div class="dot-num">{{ currentStep > i + 1 ? '✓' : (i + 1) }}</div>
-            <span>{{ s }}</span>
-          </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:24px; font-size:13px;">
+          <span v-for="(s, i) in installSteps" :key="s" :style="{ color: currentStep >= i + 1 ? 'var(--brand-600)' : 'var(--text-3)', fontWeight: currentStep === i + 1 ? '700' : 'normal' }">
+            {{ i + 1 }}. {{ s }}
+          </span>
         </div>
 
         <!-- 步骤 1: 环境检测 -->
         <div v-if="currentStep === 1">
-          <div class="env-item">
-            <span>PHP 运行时 ({{ envData.php_version?.current || '加载中...' }})</span>
-            <span class="soft-tag" :class="envData.php_version?.status">{{ envData.php_version?.status === 'pass' ? '兼容' : '不符合' }}</span>
-          </div>
-          <div v-for="ext in envData.extensions" :key="ext.name" class="env-item">
+          <div class="form-item" v-for="ext in envData.extensions" :key="ext.name" style="background:#fff; padding:10px 14px; border-radius:8px; border:1px solid var(--border); flex-direction:row; justify-content:space-between; align-items:center;">
             <span>{{ ext.name }} - {{ ext.description }}</span>
-            <span class="soft-tag" :class="ext.status">{{ ext.status === 'pass' ? '通过' : (ext.status === 'warn' ? 'SQLite兼容' : '缺失') }}</span>
-          </div>
-          <div v-for="perm in envData.permissions" :key="perm.path" class="env-item">
-            <span>{{ perm.path }}</span>
-            <span class="soft-tag" :class="perm.status">{{ perm.status === 'pass' ? '可写' : '只读' }}</span>
+            <span class="soft-tag" :class="ext.status">{{ ext.status === 'pass' ? '通过' : '缺失' }}</span>
           </div>
         </div>
 
-        <!-- 步骤 2: 数据库设置 (地址、端口、数据库名、连接账号、密码全部独立输入) -->
+        <!-- 步骤 2: 数据库设置 (独立输入) -->
         <div v-if="currentStep === 2">
-          <!-- 1. 地址与端口单独输入 -->
           <div class="form-grid-2col">
             <div class="form-item">
               <label>数据库服务器地址 (Host)</label>
@@ -173,14 +189,10 @@
               <input v-model.number="dbForm.port" type="number" class="input-theme" placeholder="3306">
             </div>
           </div>
-
-          <!-- 2. 数据库名单独输入 -->
           <div class="form-item">
             <label>数据库名称 (Database Name)</label>
             <input v-model="dbForm.database" class="input-theme" placeholder="src_monitor">
           </div>
-
-          <!-- 3. 连接账号与连接密码分别单独输入 -->
           <div class="form-grid-split">
             <div class="form-item">
               <label>数据库连接账号 (Username)</label>
@@ -191,16 +203,9 @@
               <input v-model="dbForm.password" type="password" class="input-theme" placeholder="请输入数据库密码">
             </div>
           </div>
-
-          <!-- 连通性测试按钮与选项 -->
-          <div class="db-tools-row">
-            <label class="checkbox-label">
-              <input v-model="dbForm.auto_create" type="checkbox">
-              <span>若数据库不存在则自动创建</span>
-            </label>
-            <button class="ghost-btn-sm" :disabled="testingDb" @click="handleTestDb">
-              {{ testingDb ? '连通性测试中...' : '测试数据库连接' }}
-            </button>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+            <label style="font-size:13px; cursor:pointer;"><input type="checkbox" v-model="dbForm.auto_create"> 若数据库不存在则自动创建</label>
+            <button class="ghost-btn-sm" :disabled="testingDb" @click="handleTestDb">{{ testingDb ? '测试中...' : '测试连接' }}</button>
           </div>
         </div>
 
@@ -229,27 +234,342 @@
         <!-- 步骤 4: 告警通道 -->
         <div v-if="currentStep === 4">
           <div class="form-item">
-            <label>企业微信机器人 Webhook (可选)</label>
+            <label>企业微信群机器人 Webhook (可选)</label>
             <input v-model="wecomWebhook" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
           </div>
-          <p style="font-size: 12px; color: var(--text-3); margin: 6px 0 0 0;">提示：可稍后在系统设置中配置邮件 SMTP、钉钉、飞书等更多渠道。</p>
         </div>
 
         <!-- 步骤 5: 完成部署 -->
-        <div v-if="currentStep === 5" style="text-align: center; padding: 20px 0;">
-          <div style="font-size: 48px; color: var(--success); margin-bottom: 12px;">✓</div>
+        <div v-if="currentStep === 5" style="text-align:center; padding:20px 0;">
+          <div style="font-size:48px; color:var(--success);">✓</div>
           <h3>系统安装部署就绪</h3>
-          <p style="font-size: 13px; color: var(--text-2);">数据库架构与特权账号已建立，安装入口已被永久加锁。</p>
+          <p style="font-size:13px; color:var(--text-2);">数据库架构与特权账号已建立，安装入口已被永久加锁。</p>
         </div>
 
-        <div class="footer-bar">
+        <div style="display:flex; justify-content:space-between; margin-top:24px; padding-top:16px; border-top:1px solid var(--border);">
           <button v-if="currentStep > 1 && currentStep < 5" class="ghost-btn" @click="currentStep--">上一步</button>
-          <div style="flex:1;"></div>
-          <button class="primary-btn" :disabled="loading" @click="handleNext">
-            {{ currentStep === 5 ? '进入控制台' : (currentStep === 4 ? '执行系统安装' : '下一步') }}
+          <div class="flex-1"></div>
+          <button class="primary-btn" style="width:auto;" :disabled="loading" @click="handleNextInstall">
+            {{ currentStep === 5 ? '进入登录面板' : (currentStep === 4 ? '执行系统安装' : '下一步') }}
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- 状态 2: 已安装但未登录 -> 极光登录面板 -->
+    <div v-else-if="isInstalled && !token && !checkingInstall" class="aurora-wrap">
+      <div class="aurora-blob blob-1"></div>
+      <div class="aurora-blob blob-2"></div>
+      <div class="glass-card login-glass-card">
+        <div class="head">
+          <div class="logo-sq">🛡️</div>
+          <h1 class="brand-title">控制台登录</h1>
+          <p class="brand-sub">SRC 资产检测站管理凭据验证</p>
+        </div>
+
+        <form @submit.prevent="handleLogin">
+          <div class="form-item">
+            <label>管理员登录名 / 邮箱</label>
+            <input v-model="loginForm.username" class="input-theme" placeholder="请输入管理员账号" required>
+          </div>
+          <div class="form-item">
+            <label>登录密码</label>
+            <input v-model="loginForm.password" type="password" class="input-theme" placeholder="••••••••" required>
+          </div>
+          <div class="form-item">
+            <label>安全算术验证码</label>
+            <div class="captcha-row">
+              <input v-model="loginForm.captcha_code" class="input-theme" placeholder="输入计算结果" required>
+              <div class="captcha-box" @click="fetchCaptcha" title="点击刷新验证码">
+                <span v-html="captchaSvg"></span>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="primary-btn" style="margin-top:12px;" :disabled="loginLoading">
+            {{ loginLoading ? '凭据校验中...' : '安全登录' }}
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 状态 3: 已登录 -> 全功能控制台管理中心 -->
+    <div v-else-if="token" class="app-layout">
+      <!-- 左侧侧边栏 -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="logo-sq" style="width:34px; height:34px; font-size:18px; margin:0;">⚡</div>
+          <strong>SRC 资产雷达</strong>
+        </div>
+        <nav class="side-menu">
+          <button class="menu-btn" :class="{ active: currentTab === 'dashboard' }" @click="currentTab = 'dashboard'">
+            📊 综合仪表盘
+          </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'domains' }" @click="currentTab = 'domains'">
+            🌐 资产域名管理
+          </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'proxies' }" @click="currentTab = 'proxies'">
+            🛡️ 网络代理池
+          </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'channels' }" @click="currentTab = 'channels'">
+            🔔 告警通知渠道
+          </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'settings' }" @click="currentTab = 'settings'">
+            ⚙️ 系统与字典维护
+          </button>
+        </nav>
+        <div style="margin-top:auto; padding:16px; border-top:1px solid var(--border); font-size:12px; color:var(--text-3);">
+          节点调度引擎就绪 (v1.2.0)
+        </div>
+      </aside>
+
+      <!-- 主工作区 -->
+      <main class="main-body">
+        <header class="topbar">
+          <div style="font-size:13px; color:var(--text-2);">
+            当前归属管理账号: <strong>{{ userInfo?.username || '管理员' }}</strong>
+          </div>
+          <div class="flex-1"></div>
+          <button class="logout-btn" @click="handleLogout">安全退出 ➔</button>
+        </header>
+
+        <div class="content-area">
+          <!-- Tab 1: 仪表盘 -->
+          <div v-if="currentTab === 'dashboard'">
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-lbl">监控主域名</span>
+                <span class="stat-val tabular-nums">{{ stats.domains_count || 0 }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-lbl">存活子域名资产</span>
+                <span class="stat-val tabular-nums">{{ stats.subdomains_count || 0 }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-lbl">今日新增发现</span>
+                <span class="stat-val tabular-nums" style="color:var(--brand-600)">+{{ stats.today_new || 0 }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-lbl">今日解析异动</span>
+                <span class="stat-val tabular-nums" style="color:var(--warning)">{{ stats.today_changed || 0 }}</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-lbl">代理节点健康度</span>
+                <span class="stat-val tabular-nums" style="color:var(--success)">{{ stats.proxy_health_rate || '100%' }}</span>
+              </div>
+            </div>
+
+            <div class="card-panel">
+              <div class="panel-head">
+                <h4 class="panel-title">最新资产变更动态流水</h4>
+                <button class="ghost-btn-sm" @click="fetchDashboard">刷新数据</button>
+              </div>
+              <el-table :data="timelineLogs" style="width: 100%">
+                <el-table-column label="资产名称" min-width="200">
+                  <template #default="{ row }">
+                    <strong>{{ row.asset_name || row.subdomain }}</strong>
+                    <div style="font-size:11px; color:var(--text-3)">{{ row.subdomain }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="record_type" label="类型" width="80" />
+                <el-table-column label="变动特征" min-width="220">
+                  <template #default="{ row }">
+                    <span style="font-family:monospace; font-size:12px;">{{ row.old_value || '无' }} ➔ {{ row.new_value || '失效' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="change_type" label="变动状态" width="110">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.change_type === 'added' ? 'pass' : (row.change_type === 'changed' ? 'brand' : 'fail')">
+                      {{ row.change_type }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="created_at" label="时间" width="160" />
+              </el-table>
+            </div>
+          </div>
+
+          <!-- Tab 2: 主域名管理 -->
+          <div v-if="currentTab === 'domains'">
+            <div class="card-panel">
+              <div class="panel-head">
+                <h4 class="panel-title">主域名监控资产</h4>
+                <div style="display:flex; gap:10px;">
+                  <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddDomainModal = true">+ 新增主域名</button>
+                </div>
+              </div>
+              <el-table :data="domainList" style="width: 100%">
+                <el-table-column prop="domain" label="主域名" min-width="180">
+                  <template #default="{ row }">
+                    <strong>{{ row.domain }}</strong>
+                    <div style="font-size:11px; color:var(--text-3)">{{ row.remark || '无备注' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="group_name" label="分组" width="120" />
+                <el-table-column prop="subdomain_count" label="存活子域" width="100" />
+                <el-table-column prop="check_interval" label="周期" width="90" />
+                <el-table-column prop="last_scanned_at" label="最近巡检" min-width="160" />
+                <el-table-column label="操作" width="220" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="handleScanDomain(row)">立即检测</button>
+                    <button class="action-link" @click="exportDomainCsv(row)">导出CSV</button>
+                    <button class="action-link danger" @click="handleDeleteDomain(row)">删除</button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+
+          <!-- Tab 3: 代理池管理 -->
+          <div v-if="currentTab === 'proxies'">
+            <div class="card-panel">
+              <div class="panel-head">
+                <h4 class="panel-title">网络出口代理节点池</h4>
+                <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddProxyModal = true">+ 新增代理节点</button>
+              </div>
+              <el-table :data="proxyList" style="width: 100%">
+                <el-table-column prop="name" label="节点名称" min-width="140" />
+                <el-table-column prop="protocol" label="协议" width="100" />
+                <el-table-column label="地址" min-width="180">
+                  <template #default="{ row }">
+                    <span>{{ row.host }}:{{ row.port }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="health_status" label="健康状态" width="110">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.health_status === 'healthy' ? 'pass' : 'fail'">{{ row.health_status }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="延迟" width="100">
+                  <template #default="{ row }">
+                    <span class="tabular-nums">{{ row.latency_ms ? row.latency_ms + 'ms' : '-' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="160" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="handleTestProxy(row)">探针测试</button>
+                    <button class="action-link danger" @click="handleDeleteProxy(row)">删除</button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+
+          <!-- Tab 4: 告警通道 -->
+          <div v-if="currentTab === 'channels'">
+            <div class="card-panel">
+              <div class="panel-head">
+                <h4 class="panel-title">告警推送渠道</h4>
+                <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddChannelModal = true">+ 新建渠道</button>
+              </div>
+              <el-table :data="channelList" style="width: 100%">
+                <el-table-column prop="name" label="渠道名称" min-width="160" />
+                <el-table-column prop="type" label="类型" width="120" />
+                <el-table-column label="配置摘要" min-width="260">
+                  <template #default="{ row }">
+                    <span style="font-size:12px; color:var(--text-2);">{{ row.config }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="160" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="handleTestChannel(row)">测试发送</button>
+                    <button class="action-link danger" @click="handleDeleteChannel(row)">删除</button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+
+          <!-- Tab 5: 系统设置 -->
+          <div v-if="currentTab === 'settings'">
+            <div class="card-panel">
+              <h4 class="panel-title" style="margin-bottom:12px;">内置子域名字典维护</h4>
+              <p style="font-size:13px; color:var(--text-3); margin-bottom:14px;">爆破枚举阶段探测的高频前缀字典。</p>
+              <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+                <span v-for="w in dictionary" :key="w" class="soft-tag brand">{{ w }}</span>
+              </div>
+              <div style="display:flex; gap:10px; max-width:400px;">
+                <input v-model="newWord" class="input-theme" placeholder="新前缀">
+                <button class="primary-btn" style="width:auto;" @click="handleAddWord">添加</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- 新增主域名弹窗 -->
+      <el-dialog v-model="showAddDomainModal" title="新增主域名监控" width="460px">
+        <div class="form-item">
+          <label>主域名 (FQDN)</label>
+          <input v-model="addDomainForm.domain" class="input-theme" placeholder="target.com">
+        </div>
+        <div class="form-item">
+          <label>资产分组</label>
+          <input v-model="addDomainForm.group_name" class="input-theme" placeholder="SRC核心">
+        </div>
+        <div class="form-item">
+          <label>巡检执行周期</label>
+          <select v-model="addDomainForm.check_interval" class="input-theme">
+            <option value="10m">10 分钟 (高频)</option>
+            <option value="1h">1 小时 (标准)</option>
+            <option value="1d">24 小时 (低频)</option>
+          </select>
+        </div>
+        <div class="form-item">
+          <label>备注说明</label>
+          <input v-model="addDomainForm.remark" class="input-theme" placeholder="如: 漏洞赏金资产">
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+          <button class="ghost-btn" @click="showAddDomainModal = false">取消</button>
+          <button class="primary-btn" style="width:auto;" @click="submitAddDomain">确认添加</button>
+        </div>
+      </el-dialog>
+
+      <!-- 新增代理弹窗 -->
+      <el-dialog v-model="showAddProxyModal" title="新增网络代理节点" width="460px">
+        <div class="form-item">
+          <label>节点名称</label>
+          <input v-model="addProxyForm.name" class="input-theme" placeholder="美国节点01">
+        </div>
+        <div class="form-grid-2col">
+          <div class="form-item">
+            <label>服务器地址</label>
+            <input v-model="addProxyForm.host" class="input-theme" placeholder="1.2.3.4">
+          </div>
+          <div class="form-item">
+            <label>端口</label>
+            <input v-model.number="addProxyForm.port" type="number" class="input-theme" placeholder="1080">
+          </div>
+        </div>
+        <div class="form-item">
+          <label>协议</label>
+          <select v-model="addProxyForm.protocol" class="input-theme">
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+            <option value="socks5">SOCKS5</option>
+            <option value="socks5h">SOCKS5h (远程DNS)</option>
+          </select>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+          <button class="ghost-btn" @click="showAddProxyModal = false">取消</button>
+          <button class="primary-btn" style="width:auto;" @click="submitAddProxy">确认保存</button>
+        </div>
+      </el-dialog>
+
+      <!-- 新增渠道弹窗 -->
+      <el-dialog v-model="showAddChannelModal" title="新建告警推送通道" width="460px">
+        <div class="form-item">
+          <label>渠道名称</label>
+          <input v-model="addChannelForm.name" class="input-theme" placeholder="安全运维群">
+        </div>
+        <div class="form-item">
+          <label>企业微信 Webhook</label>
+          <input v-model="addChannelForm.webhook_url" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+          <button class="ghost-btn" @click="showAddChannelModal = false">取消</button>
+          <button class="primary-btn" style="width:auto;" @click="submitAddChannel">确认保存</button>
+        </div>
+      </el-dialog>
     </div>
   </div>
 
@@ -258,48 +578,84 @@
   <script src="https://unpkg.com/element-plus@2.6.3/dist/index.full.min.js"></script>
   <script>
     const { createApp, ref, onMounted } = Vue;
+
     createApp({
       setup() {
+        const isInstalled = ref(false);
+        const checkingInstall = ref(true);
+        const token = ref(localStorage.getItem('src_token') || '');
+        const userInfo = ref(JSON.parse(localStorage.getItem('src_user') || 'null'));
+
+        // 安装向导状态
         const currentStep = ref(1);
         const loading = ref(false);
         const testingDb = ref(false);
         const installToken = ref('');
-        const steps = ['环境检测', '数据库设置', '管理员账号', '告警通道', '完成部署'];
-        const envData = ref({ extensions: [], permissions: [] });
-
-        // 数据库独立输入表单
-        const dbForm = ref({
-          host: '127.0.0.1',
-          port: 3306,
-          database: 'src_monitor',
-          username: 'root',
-          password: '',
-          auto_create: true
-        });
-
-        const adminForm = ref({
-          username: 'admin',
-          email: 'admin@2016xlx.cn',
-          password: '',
-          password_confirmation: ''
-        });
-
+        const installSteps = ['环境检测', '数据库设置', '管理员账号', '告警通道', '完成部署'];
+        const envData = ref({ extensions: [] });
+        const dbForm = ref({ host: '127.0.0.1', port: 3306, database: 'src_monitor', username: 'root', password: '', auto_create: true });
+        const adminForm = ref({ username: 'admin', email: 'admin@2016xlx.cn', password: '', password_confirmation: '' });
         const wecomWebhook = ref('');
 
-        onMounted(async () => {
+        // 登录面板状态
+        const loginForm = ref({ username: '', password: '', captcha_code: '', captcha_key: '' });
+        const captchaSvg = ref('');
+        const loginLoading = ref(false);
+
+        // 控制台状态
+        const currentTab = ref('dashboard');
+        const stats = ref({});
+        const timelineLogs = ref([]);
+        const domainList = ref([]);
+        const proxyList = ref([]);
+        const channelList = ref([]);
+        const dictionary = ref([]);
+        const newWord = ref('');
+
+        // 弹窗表单
+        const showAddDomainModal = ref(false);
+        const addDomainForm = ref({ domain: '', group_name: 'SRC核心', check_interval: '1h', remark: '' });
+        const showAddProxyModal = ref(false);
+        const addProxyForm = ref({ name: '', host: '', port: 8080, protocol: 'http' });
+        const showAddChannelModal = ref(false);
+        const addChannelForm = ref({ name: '', webhook_url: '' });
+
+        const setupAxiosAuth = () => {
+          if (token.value) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token.value}`;
+          } else {
+            delete axios.defaults.headers.common['Authorization'];
+          }
+        };
+
+        const checkSystemStatus = async () => {
           try {
             const { data } = await axios.get('/api/v1/install/status');
-            if (data.data?.installed) {
-              window.location.href = '/login';
-              return;
+            isInstalled.value = data.data?.installed ?? false;
+            if (!isInstalled.value) {
+              installToken.value = data.data.install_token;
+              fetchEnvCheck();
+            } else if (!token.value) {
+              fetchCaptcha();
+            } else {
+              initConsole();
             }
-            installToken.value = data.data.install_token;
-            const envRes = await axios.post('/api/v1/install/check-env', {}, {
+          } catch(e) {
+            isInstalled.value = true;
+            if (!token.value) fetchCaptcha();
+          } finally {
+            checkingInstall.value = false;
+          }
+        };
+
+        const fetchEnvCheck = async () => {
+          try {
+            const { data } = await axios.post('/api/v1/install/check-env', {}, {
               headers: { 'X-Install-Token': installToken.value }
             });
-            envData.value = envRes.data.data;
+            envData.value = data.data;
           } catch(e) {}
-        });
+        };
 
         const handleTestDb = async () => {
           testingDb.value = true;
@@ -309,71 +665,254 @@
             });
             ElementPlus.ElMessage.success(data.msg || '数据库网络连接成功');
           } catch(err) {
-            ElementPlus.ElMessage.error(err.response?.data?.msg || '数据库连接失败，请检查账号密码');
+            ElementPlus.ElMessage.error(err.response?.data?.msg || '数据库连接失败');
           } finally {
             testingDb.value = false;
           }
         };
 
-        const handleNext = async () => {
+        const handleNextInstall = async () => {
           loading.value = true;
           try {
             if (currentStep.value === 1) {
               currentStep.value = 2;
             } else if (currentStep.value === 2) {
-              await axios.post('/api/v1/install/database', dbForm.value, {
-                headers: { 'X-Install-Token': installToken.value }
-              });
+              await axios.post('/api/v1/install/database', dbForm.value, { headers: { 'X-Install-Token': installToken.value } });
               currentStep.value = 3;
             } else if (currentStep.value === 3) {
-              if (!adminForm.value.username || !adminForm.value.password || !adminForm.value.email) {
-                ElementPlus.ElMessage.warning('请填写管理员完整信息');
-                loading.value = false;
-                return;
-              }
-              await axios.post('/api/v1/install/admin', adminForm.value, {
-                headers: { 'X-Install-Token': installToken.value }
-              });
+              await axios.post('/api/v1/install/admin', adminForm.value, { headers: { 'X-Install-Token': installToken.value } });
               currentStep.value = 4;
             } else if (currentStep.value === 4) {
               const channels = [];
               if (wecomWebhook.value.trim()) {
-                channels.push({
-                  name: '企业微信群机器人',
-                  type: 'wecom',
-                  config: { webhook_url: wecomWebhook.value.trim() }
-                });
+                channels.push({ name: '企业微信群机器人', type: 'wecom', config: { webhook_url: wecomWebhook.value.trim() } });
               }
               if (channels.length > 0) {
-                await axios.post('/api/v1/install/notify', { channels }, {
-                  headers: { 'X-Install-Token': installToken.value }
-                });
+                await axios.post('/api/v1/install/notify', { channels }, { headers: { 'X-Install-Token': installToken.value } });
               }
-              await axios.post('/api/v1/install/complete', {}, {
-                headers: { 'X-Install-Token': installToken.value }
-              });
+              await axios.post('/api/v1/install/complete', {}, { headers: { 'X-Install-Token': installToken.value } });
               currentStep.value = 5;
             } else if (currentStep.value === 5) {
-              window.location.reload();
+              isInstalled.value = true;
+              fetchCaptcha();
             }
           } catch(e) {
-            ElementPlus.ElMessage.error(e.response?.data?.msg || '操作异常，请检查输入');
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '操作异常');
           } finally {
             loading.value = false;
           }
         };
 
+        const fetchCaptcha = async () => {
+          try {
+            const { data } = await axios.post('/api/v1/auth/captcha');
+            captchaSvg.value = data.data.svg;
+            loginForm.value.captcha_key = data.data.key;
+          } catch(e) {}
+        };
+
+        const handleLogin = async () => {
+          loginLoading.value = true;
+          try {
+            const { data } = await axios.post('/api/v1/auth/login', loginForm.value);
+            token.value = data.data.token;
+            userInfo.value = data.data.user;
+            localStorage.setItem('src_token', token.value);
+            localStorage.setItem('src_user', JSON.stringify(userInfo.value));
+            setupAxiosAuth();
+            ElementPlus.ElMessage.success('登录成功，正在加载控制台');
+            initConsole();
+          } catch(err) {
+            ElementPlus.ElMessage.error(err.response?.data?.msg || '登录失败，请核对信息');
+            fetchCaptcha();
+          } finally {
+            loginLoading.value = false;
+          }
+        };
+
+        const handleLogout = () => {
+          token.value = '';
+          userInfo.value = null;
+          localStorage.removeItem('src_token');
+          localStorage.removeItem('src_user');
+          setupAxiosAuth();
+          fetchCaptcha();
+        };
+
+        const initConsole = () => {
+          setupAxiosAuth();
+          fetchDashboard();
+          fetchDomains();
+          fetchProxies();
+          fetchChannels();
+          fetchSettings();
+        };
+
+        const fetchDashboard = async () => {
+          try {
+            const [statsRes, logsRes] = await Promise.all([
+              axios.get('/api/v1/dashboard/stats'),
+              axios.get('/api/v1/dashboard/timeline?limit=15')
+            ]);
+            stats.value = statsRes.data.data;
+            timelineLogs.value = logsRes.data.data;
+          } catch(e) {}
+        };
+
+        const fetchDomains = async () => {
+          try {
+            const { data } = await axios.get('/api/v1/domains');
+            domainList.value = data.data.list;
+          } catch(e) {}
+        };
+
+        const submitAddDomain = async () => {
+          try {
+            await axios.post('/api/v1/domains', addDomainForm.value);
+            ElementPlus.ElMessage.success('主域名资产已纳入监控');
+            showAddDomainModal.value = false;
+            fetchDomains();
+          } catch(e) {
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '添加失败');
+          }
+        };
+
+        const handleScanDomain = async (row) => {
+          try {
+            const { data } = await axios.post(`/api/v1/domains/${row.id}/scan`);
+            ElementPlus.ElMessage.success(`检测完成: 存活 ${data.data.total_active}，变动 ${data.data.changes}`);
+            fetchDomains();
+            fetchDashboard();
+          } catch(e) {
+            ElementPlus.ElMessage.error('检测失败');
+          }
+        };
+
+        const exportDomainCsv = (row) => {
+          window.open(`/api/v1/subdomains/export?domain_id=${row.id}`, '_blank');
+        };
+
+        const handleDeleteDomain = (row) => {
+          if (confirm(`确认下线并删除主域名 [${row.domain}] 吗？`)) {
+            axios.delete(`/api/v1/domains/${row.id}`).then(() => {
+              ElementPlus.ElMessage.success('已删除');
+              fetchDomains();
+            });
+          }
+        };
+
+        const fetchProxies = async () => {
+          try {
+            const { data } = await axios.get('/api/v1/proxies');
+            proxyList.value = data.data.list;
+          } catch(e) {}
+        };
+
+        const submitAddProxy = async () => {
+          try {
+            await axios.post('/api/v1/proxies', addProxyForm.value);
+            ElementPlus.ElMessage.success('代理节点已保存');
+            showAddProxyModal.value = false;
+            fetchProxies();
+          } catch(e) {
+            ElementPlus.ElMessage.error('保存失败');
+          }
+        };
+
+        const handleTestProxy = async (row) => {
+          try {
+            const { data } = await axios.post(`/api/v1/proxies/${row.id}/test`);
+            ElementPlus.ElMessage.success(`✅ 延迟: ${data.data.latency_ms}ms · 出口IP: ${data.data.egress_ip}`);
+            fetchProxies();
+          } catch(e) {
+            ElementPlus.ElMessage.error('探针探测失败');
+          }
+        };
+
+        const handleDeleteProxy = (row) => {
+          if (confirm(`确认删除代理 [${row.name}] 吗？`)) {
+            axios.delete(`/api/v1/proxies/${row.id}`).then(() => {
+              ElementPlus.ElMessage.success('已删除');
+              fetchProxies();
+            });
+          }
+        };
+
+        const fetchChannels = async () => {
+          try {
+            const { data } = await axios.get('/api/v1/notify-channels');
+            channelList.value = data.data;
+          } catch(e) {}
+        };
+
+        const submitAddChannel = async () => {
+          try {
+            await axios.post('/api/v1/notify-channels', {
+              name: addChannelForm.value.name,
+              type: 'wecom',
+              config: { webhook_url: addChannelForm.value.webhook_url }
+            });
+            ElementPlus.ElMessage.success('通知渠道已添加');
+            showAddChannelModal.value = false;
+            fetchChannels();
+          } catch(e) {
+            ElementPlus.ElMessage.error('添加失败');
+          }
+        };
+
+        const handleTestChannel = async (row) => {
+          try {
+            await axios.post(`/api/v1/notify-channels/${row.id}/test`);
+            ElementPlus.ElMessage.success('测试消息已成功推送');
+          } catch(e) {
+            ElementPlus.ElMessage.error('测试发送失败');
+          }
+        };
+
+        const handleDeleteChannel = (row) => {
+          if (confirm(`确认删除渠道 [${row.name}] 吗？`)) {
+            axios.delete(`/api/v1/notify-channels/${row.id}`).then(() => {
+              ElementPlus.ElMessage.success('已删除');
+              fetchChannels();
+            });
+          }
+        };
+
+        const fetchSettings = async () => {
+          try {
+            const { data } = await axios.get('/api/v1/settings');
+            dictionary.value = data.data.dictionary_subdomains || [];
+          } catch(e) {}
+        };
+
+        const handleAddWord = async () => {
+          const w = newWord.value.trim().toLowerCase();
+          if (!w) return;
+          if (!dictionary.value.includes(w)) {
+            dictionary.value.push(w);
+            await axios.post('/api/v1/settings', { key: 'dictionary_subdomains', value: dictionary.value });
+            ElementPlus.ElMessage.success('字典已更新');
+            newWord.value = '';
+          }
+        };
+
+        onMounted(() => {
+          setupAxiosAuth();
+          checkSystemStatus();
+        });
+
         return {
-          currentStep,
-          steps,
-          envData,
-          dbForm,
-          adminForm,
-          wecomWebhook,
-          handleTestDb,
-          handleNext,
-          loading,
-          testingDb
+          isInstalled, checkingInstall, token, userInfo,
+          currentStep, loading, testingDb, installSteps, envData, dbForm, adminForm, wecomWebhook,
+          handleTestDb, handleNextInstall,
+          loginForm, captchaSvg, loginLoading, handleLogin, handleLogout, fetchCaptcha,
+          currentTab, stats, timelineLogs, domainList, proxyList, channelList, dictionary, newWord,
+          fetchDashboard, fetchDomains, handleScanDomain, exportDomainCsv, handleDeleteDomain,
+          fetchProxies, handleTestProxy, handleDeleteProxy,
+          fetchChannels, handleTestChannel, handleDeleteChannel, handleAddWord,
+          showAddDomainModal, addDomainForm, submitAddDomain,
+          showAddProxyModal, addProxyForm, submitAddProxy,
+          showAddChannelModal, addChannelForm, submitAddChannel
         };
       }
     }).use(ElementPlus).mount('#app');
