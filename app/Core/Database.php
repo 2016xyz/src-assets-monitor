@@ -4,6 +4,7 @@ namespace App\Core;
 
 use PDO;
 use Exception;
+use PDOException;
 
 class Database
 {
@@ -36,13 +37,17 @@ class Database
             return $pdo;
         }
 
-        $dsn = "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4";
-        return new PDO($dsn, $user, $pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-            PDO::ATTR_TIMEOUT => 5
-        ]);
+        try {
+            $dsn = "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4";
+            return new PDO($dsn, $user, $pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_TIMEOUT => 5
+            ]);
+        } catch (PDOException $e) {
+            throw new \RuntimeException("无法连接到 MySQL 数据库 [{$host}:{$port}/{$dbName}]，请检查凭据与网络", 500, $e);
+        }
     }
 
     public static function query(string $sql, array $params = []): \PDOStatement

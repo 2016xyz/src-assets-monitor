@@ -1,5 +1,9 @@
 <?php
 
+// 生产环境安全错误配置 (不裸露敏感堆栈，统一由 Response 格式化输出)
+error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED);
+ini_set('display_errors', '0');
+
 // 若通过 PHP 内置开发服务器启动 (php -S)，且请求的是非 PHP 静态资源文件，则直接返回 false 让内置服务器原生处理
 if (PHP_SAPI === 'cli-server') {
     $filePath = __DIR__ . parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
@@ -41,7 +45,6 @@ try {
     $router->dispatch($request);
 } catch (\Throwable $e) {
     Response::error('系统执行异常: ' . $e->getMessage(), 500, 500, [
-        'file' => basename($e->getFile()),
-        'line' => $e->getLine()
+        'error_type' => basename(str_replace('\\', '/', get_class($e)))
     ]);
 }
