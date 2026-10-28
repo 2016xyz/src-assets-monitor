@@ -36,7 +36,7 @@ class EnsureSystemInstalled
         }
 
         // 情况二：未安装，试图请求业务接口
-        if (!$isInstalled && !$isInstallRoute && $uri !== '/' && !str_starts_with($uri, '/assets')) {
+        if (!$isInstalled && !$isInstallRoute && $uri !== '/' && $uri !== '/index.php' && !str_starts_with($uri, '/assets')) {
             Response::json([
                 'install_required' => true,
                 'redirect'         => '/install'

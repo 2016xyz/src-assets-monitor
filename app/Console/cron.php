@@ -3,6 +3,7 @@
 require_once dirname(__DIR__, 2) . '/autoload.php';
 
 use App\Core\Database;
+use App\Middleware\EnsureSystemInstalled;
 use App\Services\Notifier\NotificationManager;
 use App\Services\Proxy\CircuitBreaker;
 use App\Services\Proxy\DoHProxyClient;
@@ -10,6 +11,12 @@ use App\Services\Proxy\ProxyHealthChecker;
 use App\Services\Proxy\ProxyRateLimiter;
 use App\Services\Proxy\ProxyScheduler;
 use App\Services\Scanner\SubdomainScanner;
+
+// 若系统尚未安装完成，静默退出
+if (!EnsureSystemInstalled::check()) {
+    echo "[" . date('Y-m-d H:i:s') . "] 系统尚未完成首次安装向导配置，自动跳过本轮巡检。\n";
+    exit(0);
+}
 
 echo "[" . date('Y-m-d H:i:s') . "] 启动自动化资产检测与代理维护轮询...\n";
 
@@ -21,11 +28,11 @@ $scanner = new SubdomainScanner($doh, $scheduler);
 $notifier = new NotificationManager($scheduler);
 $healthChecker = new ProxyHealthChecker($cb);
 
-// 1. 代理健康周期巡检 (每5次运行一次或轮询)
+// 1. 代理健康周期巡检 (每5分钟巡检一次)
 $proxies = Database::fetchAll("SELECT * FROM proxies WHERE status = 1");
 foreach ($proxies as $p) {
     $last = strtotime($p['last_check_at'] ?? '2000-01-01');
-    if (time() - $last >= 300) { // 5分钟巡检一次
+    if (time() - $last >= 300) {
         $res = $healthChecker->check($p);
         echo " - 代理 [{$p['name']}]: " . ($res['healthy'] ? "健康 (延迟 {$res['latency_ms']}ms)" : "异常") . "\n";
     }
