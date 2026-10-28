@@ -147,8 +147,8 @@ class SubdomainScanner
             }
         }
 
-        // 9. 阶段八：快照比对、资产名称自动识别与持久化
-        $this->logTask($taskId, 'snapshot_diff', 'info', "执行多维快照比对与资产名称优先级链识别");
+        // 9. 阶段八：快照比对、CDN Anycast 漂移平滑过滤、NXDOMAIN 防抖与资产名称识别
+        $this->logTask($taskId, 'snapshot_diff', 'info', "执行快照比对与 CDN Anycast 漂移防误报平滑过滤");
         $changes = $this->diffAndPersistExtended($domain, $taskId, $analyzedRecords, $proxy);
 
         return [
@@ -224,9 +224,12 @@ class SubdomainScanner
         return array_values(array_unique($discovered));
     }
 
+    /**
+     * 核心比对与落库逻辑（内置 CDN Anycast 漂移平滑过滤 + NXDOMAIN 防抖重测）
+     */
     private function diffAndPersistExtended(array $domain, int $taskId, array $records, ?array $proxy): array
     {
-        // 关键加固 1: 本次候选集先按 subdomain + record_type 进行唯一键合并，杜绝批次内重复
+        // 1. 本次候选集按 subdomain + record_type 唯一化去重
         $dedupRecords = [];
         foreach ($records as $r) {
             $dedupKey = "{$r['subdomain']}:{$r['record_type']}";
@@ -234,25 +237,39 @@ class SubdomainScanner
         }
         $records = array_values($dedupRecords);
 
-        // 关键加固 2: 载入已有的存活映射
+        // 2. 载入历史记录
         $existing = Database::fetchAll("SELECT * FROM subdomains WHERE domain_id = ?", [$domain['id']]);
         $existingMap = [];
         foreach ($existing as $ex) {
             $existingMap["{$ex['subdomain']}:{$ex['record_type']}"] = $ex;
         }
 
+        // 关键增强 1: 扫描全量记录，构建 CDN 托管的子域名白名单集合
+        $cdnManagedSubs = [];
+        foreach ($records as $r) {
+            if ($r['record_type'] === 'CNAME' && (CdnDriftFilter::isCdnCname($r['value']) || CdnDriftFilter::isCdnCname($r['cname_chain'] ?? ''))) {
+                $cdnManagedSubs[$r['subdomain']] = true;
+            }
+        }
+        foreach ($existing as $ex) {
+            if ($ex['record_type'] === 'CNAME' && (CdnDriftFilter::isCdnCname($ex['record_value']) || CdnDriftFilter::isCdnCname($ex['cname_chain'] ?? ''))) {
+                $cdnManagedSubs[$ex['subdomain']] = true;
+            }
+        }
+
         $currentMap = [];
         $changes = [];
 
+        // 3. 处理新增与变更比对
         foreach ($records as $r) {
             $key = "{$r['subdomain']}:{$r['record_type']}";
             $currentMap[$key] = $r;
             $sourcesJson = json_encode($r['sources'] ?? ['unknown'], JSON_UNESCAPED_UNICODE);
             $primarySource = ($r['sources'][0] ?? 'unknown');
-
             $priority = $this->calculatePriority($primarySource, !empty($r['takeover_risk']));
 
             if (!isset($existingMap[$key])) {
+                // 真正的全新资产发现
                 $nameInfo = $this->nameResolver->resolve(
                     $r['subdomain'],
                     $domain['domain'],
@@ -286,6 +303,7 @@ class SubdomainScanner
                     'record_value'          => $r['value'],
                     'source'                => $primarySource,
                     'status'                => 'active',
+                    'missing_count'         => 0,
                     'takeover_risk'         => $r['takeover_risk'] ?? 0,
                     'takeover_reason'       => $r['takeover_reason'] ?? null,
                     'cname_chain'           => $r['cname_chain'] ?? null,
@@ -295,78 +313,135 @@ class SubdomainScanner
                     'created_at'            => date('Y-m-d H:i:s')
                 ]);
 
-                // 关键加固 3: 插入后立即登记到内存 existingMap，防止后续循环发生冲突
                 $existingMap[$key] = [
-                    'id'           => $newSubId,
-                    'record_value' => $r['value'],
-                    'status'       => 'active',
-                    'alias_name'   => null
+                    'id'            => $newSubId,
+                    'record_value'  => $r['value'],
+                    'status'        => 'active',
+                    'missing_count' => 0,
+                    'alias_name'    => null
                 ];
             } else {
                 $old = $existingMap[$key];
+
+                // 核心防抖 1: 如果当前已经重新检测到该资产，立即清空历史 missing_count
+                if (($old['missing_count'] ?? 0) > 0 || $old['status'] !== 'active') {
+                    Database::update('subdomains', [
+                        'status'        => 'active',
+                        'missing_count' => 0,
+                        'last_seen_at'  => date('Y-m-d H:i:s')
+                    ], 'id = ?', [$old['id']]);
+                }
+
                 if ($old['record_value'] !== $r['value']) {
-                    $nameInfo = $this->nameResolver->resolve(
-                        $r['subdomain'],
-                        $domain['domain'],
-                        $r['record_type'],
+                    // 核心过滤 2: 判断是否为 Cloudflare / CDN 内部正常 Anycast IP 漂移
+                    $isCdnManaged = !empty($cdnManagedSubs[$r['subdomain']]);
+                    $isBenign = CdnDriftFilter::isBenignCdnDrift(
+                        $old['record_value'],
                         $r['value'],
-                        $old['alias_name'] ?? null,
-                        $proxy
+                        $isCdnManaged,
+                        $r['cname_chain'] ?? ($old['cname_chain'] ?? null)
                     );
 
-                    $type = ($r['record_type'] === 'TXT') ? 'txt_update' : 'changed';
-                    $changes[] = [
-                        'domain_id'         => $domain['id'],
-                        'subdomain'         => $r['subdomain'],
-                        'asset_name'        => $nameInfo['asset_name'],
-                        'asset_name_source' => $nameInfo['asset_name_source'],
-                        'provenance_source' => $primarySource,
-                        'priority_level'    => $priority,
-                        'record_type'       => $r['record_type'],
-                        'change_type'       => $type,
-                        'old_value'         => $old['record_value'],
-                        'new_value'         => $r['value']
-                    ];
+                    if ($isBenign) {
+                        // 属于良性 CDN Anycast 轮换：保持静默，更新数据库最新值，不触发报警！
+                        Database::update('subdomains', [
+                            'record_value' => $r['value'],
+                            'last_seen_at' => date('Y-m-d H:i:s')
+                        ], 'id = ?', [$old['id']]);
+                    } else {
+                        // 属于真实源站变动 (如从 CDN 切回真实独立 IP，或 CNAME 指向被修改)
+                        $nameInfo = $this->nameResolver->resolve(
+                            $r['subdomain'],
+                            $domain['domain'],
+                            $r['record_type'],
+                            $r['value'],
+                            $old['alias_name'] ?? null,
+                            $proxy
+                        );
 
-                    Database::update('subdomains', [
-                        'asset_name'            => $nameInfo['asset_name'],
-                        'asset_name_source'     => $nameInfo['asset_name_source'],
-                        'asset_name_updated_at' => $nameInfo['asset_name_updated_at'],
-                        'record_value'          => $r['value'],
-                        'takeover_risk'         => $r['takeover_risk'] ?? 0,
-                        'takeover_reason'       => $r['takeover_reason'] ?? null,
-                        'cname_chain'           => $r['cname_chain'] ?? null,
-                        'status'                => 'active',
-                        'last_seen_at'          => date('Y-m-d H:i:s')
-                    ], 'id = ?', [$old['id']]);
+                        $type = ($r['record_type'] === 'TXT') ? 'txt_update' : 'changed';
+                        $changes[] = [
+                            'domain_id'         => $domain['id'],
+                            'subdomain'         => $r['subdomain'],
+                            'asset_name'        => $nameInfo['asset_name'],
+                            'asset_name_source' => $nameInfo['asset_name_source'],
+                            'provenance_source' => $primarySource,
+                            'priority_level'    => $priority,
+                            'record_type'       => $r['record_type'],
+                            'change_type'       => $type,
+                            'old_value'         => $old['record_value'],
+                            'new_value'         => $r['value']
+                        ];
+
+                        Database::update('subdomains', [
+                            'asset_name'            => $nameInfo['asset_name'],
+                            'asset_name_source'     => $nameInfo['asset_name_source'],
+                            'asset_name_updated_at' => $nameInfo['asset_name_updated_at'],
+                            'record_value'          => $r['value'],
+                            'takeover_risk'         => $r['takeover_risk'] ?? 0,
+                            'takeover_reason'       => $r['takeover_reason'] ?? null,
+                            'cname_chain'           => $r['cname_chain'] ?? null,
+                            'status'                => 'active',
+                            'missing_count'         => 0,
+                            'last_seen_at'          => date('Y-m-d H:i:s')
+                        ], 'id = ?', [$old['id']]);
+                    }
                 } else {
                     Database::update('subdomains', [
-                        'last_seen_at'       => date('Y-m-d H:i:s'),
-                        'takeover_risk'      => $r['takeover_risk'] ?? 0,
-                        'takeover_reason'    => $r['takeover_reason'] ?? null
+                        'last_seen_at'    => date('Y-m-d H:i:s'),
+                        'takeover_risk'   => $r['takeover_risk'] ?? 0,
+                        'takeover_reason' => $r['takeover_reason'] ?? null
                     ], 'id = ?', [$old['id']]);
                 }
             }
         }
 
+        // 4. 核心防抖 3: 针对历史存活资产未在本次批次出现的处理 (NXDOMAIN 3轮确认防误报)
         foreach ($existingMap as $k => $old) {
             if (!isset($currentMap[$k]) && $old['status'] === 'active') {
-                $changes[] = [
-                    'domain_id'         => $domain['id'],
-                    'subdomain'         => $old['subdomain'],
-                    'asset_name'        => $old['asset_name'] ?: $old['subdomain'],
-                    'asset_name_source' => $old['asset_name_source'] ?: 'hostname',
-                    'provenance_source' => 'snapshot_diff',
-                    'priority_level'    => 'normal',
-                    'record_type'       => $old['record_type'],
-                    'change_type'       => 'removed',
-                    'old_value'         => $old['record_value'],
-                    'new_value'         => null
-                ];
-                Database::update('subdomains', ['status' => 'nxdomain'], 'id = ?', [$old['id']]);
+                // 第一步：使用备用 DoH 端点做一次快速即时复核，避免网络丢包
+                $retryRes = $this->dohClient->resolve($old['subdomain'], $old['record_type'], $proxy);
+                if (!empty($retryRes['records'])) {
+                    // 备用端点成功复查到，说明只是刚才并发瞬间超时，更新活跃时间并跳过失效判定
+                    Database::update('subdomains', [
+                        'last_seen_at'  => date('Y-m-d H:i:s'),
+                        'missing_count' => 0
+                    ], 'id = ?', [$old['id']]);
+                    continue;
+                }
+
+                // 第二步：防抖计数累加
+                $curMissing = (int)($old['missing_count'] ?? 0) + 1;
+
+                if ($curMissing < 3) {
+                    // 未达到 3 次连续确认阈值：保持 active 状态，仅累加计数，绝不触发误报通知！
+                    Database::update('subdomains', [
+                        'missing_count' => $curMissing
+                    ], 'id = ?', [$old['id']]);
+                } else {
+                    // 达到连续 3 轮均无响应确认：正式判定为解析失效 (NXDOMAIN) 并触发通知
+                    $changes[] = [
+                        'domain_id'         => $domain['id'],
+                        'subdomain'         => $old['subdomain'],
+                        'asset_name'        => $old['asset_name'] ?: $old['subdomain'],
+                        'asset_name_source' => $old['asset_name_source'] ?: 'hostname',
+                        'provenance_source' => 'snapshot_diff',
+                        'priority_level'    => 'normal',
+                        'record_type'       => $old['record_type'],
+                        'change_type'       => 'removed',
+                        'old_value'         => $old['record_value'],
+                        'new_value'         => null
+                    ];
+
+                    Database::update('subdomains', [
+                        'status'        => 'nxdomain',
+                        'missing_count' => $curMissing
+                    ], 'id = ?', [$old['id']]);
+                }
             }
         }
 
+        // 5. 将真正实质性的变动记录落库
         foreach ($changes as $c) {
             Database::insert('change_logs', array_merge($c, ['created_at' => date('Y-m-d H:i:s')]));
         }

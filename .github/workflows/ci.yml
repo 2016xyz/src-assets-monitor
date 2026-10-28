@@ -41,6 +41,9 @@ jobs:
       - name: Run Security Hardening Tests (SQLi, XSS, SSRF)
         run: php tests/SecurityHardeningTest.php
 
+      - name: Run CDN Anycast Drift & Anti-Flapping Tests
+        run: php tests/CdnDriftAntiFlappingTest.php
+
   docker-lint:
     name: Docker Configuration Lint
     runs-on: ubuntu-latest
