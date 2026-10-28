@@ -22,12 +22,11 @@ class DoHProxyClient
     }
 
     /**
-     * 经代理执行单条 DoH 解析 (优先选取阿里 DNS / 腾讯 DNSPod / Cloudflare)
+     * 经代理执行单条 DoH 解析 (支持递归自动提取 CNAME 链与底层 A 记录)
      */
     public function resolve(string $domain, string $type = 'A', ?array $proxy = null): array
     {
         $startTime = microtime(true);
-        // 若无海外代理，优先采用国内阿里 DNS 与腾讯 DNSPod 极速解析
         $upstream = $proxy ? $this->dohUpstreams[array_rand($this->dohUpstreams)] : $this->dohUpstreams[mt_rand(0, 1)];
         $url = $upstream . '?name=' . urlencode($domain) . '&type=' . urlencode($type);
 
@@ -68,17 +67,7 @@ class DoHProxyClient
         }
 
         $json = json_decode($response, true);
-        $answers = [];
-        if (!empty($json['Answer'])) {
-            foreach ($json['Answer'] as $ans) {
-                $answers[] = [
-                    'name' => rtrim($ans['name'], '.'),
-                    'type' => $type,
-                    'data' => trim($ans['data'], '"'),
-                    'ttl'  => $ans['TTL'] ?? 300
-                ];
-            }
-        }
+        $answers = $this->parseDnsAnswers($json, $type);
 
         if ($proxy) {
             $this->circuitBreaker->recordSuccess($proxy['id'], $duration);
@@ -92,7 +81,7 @@ class DoHProxyClient
     }
 
     /**
-     * 高性能并发批量 DoH 解析 (使用 curl_multi 并行发起数十个请求，大幅提速爆破与全网探测)
+     * 高性能并发批量 DoH 解析 (支持递归自动提取 CNAME 链与真实 A 记录)
      *
      * @param array $queries [['subdomain' => 'api.target.com', 'type' => 'A'], ...]
      * @param array|null $proxy
@@ -154,22 +143,48 @@ class DoHProxyClient
             $answers = [];
             if ($httpCode === 200 && !empty($content)) {
                 $json = json_decode($content, true);
-                if (!empty($json['Answer'])) {
-                    foreach ($json['Answer'] as $ans) {
-                        $answers[] = [
-                            'name' => rtrim($ans['name'], '.'),
-                            'type' => (explode(':', $key)[1] ?? 'A'),
-                            'data' => trim($ans['data'], '"'),
-                            'ttl'  => $ans['TTL'] ?? 300
-                        ];
-                    }
-                }
+                $queryType = explode(':', $key)[1] ?? 'A';
+                $answers = $this->parseDnsAnswers($json, $queryType);
             }
             $results[$key] = $answers;
         }
 
         curl_multi_close($multi);
         return $results;
+    }
+
+    /**
+     * 智能识别并标准化 DNS Answer 中的各种记录类型 (Type 1=A, Type 5=CNAME, Type 28=AAAA, Type 16=TXT, Type 15=MX)
+     */
+    private function parseDnsAnswers(?array $json, string $fallbackType): array
+    {
+        $answers = [];
+        if (!empty($json['Answer']) && is_array($json['Answer'])) {
+            foreach ($json['Answer'] as $ans) {
+                $rawType = $ans['type'] ?? 1;
+                $mappedType = $fallbackType;
+
+                if ($rawType == 1) {
+                    $mappedType = 'A';
+                } elseif ($rawType == 5) {
+                    $mappedType = 'CNAME';
+                } elseif ($rawType == 28) {
+                    $mappedType = 'AAAA';
+                } elseif ($rawType == 16) {
+                    $mappedType = 'TXT';
+                } elseif ($rawType == 15) {
+                    $mappedType = 'MX';
+                }
+
+                $answers[] = [
+                    'name' => rtrim($ans['name'] ?? '', '.'),
+                    'type' => $mappedType,
+                    'data' => trim($ans['data'] ?? '', '"'),
+                    'ttl'  => $ans['TTL'] ?? 300
+                ];
+            }
+        }
+        return $answers;
     }
 
     /**
