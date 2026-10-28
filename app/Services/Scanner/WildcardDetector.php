@@ -15,26 +15,18 @@ class WildcardDetector
 
     /**
      * 探测目标主域名是否存在泛解析 (Wildcard DNS)
-     *
-     * @param string $mainDomain 目标主域名 (如 target.com)
-     * @param array|null $proxy 出口代理
-     * @return array [
-     *   'has_wildcard' => bool,
-     *   'wildcard_ips' => ['1.2.3.4'],
-     *   'wildcard_cnames' => ['wildcard.cdn.com'],
-     *   'tested_count' => int
-     * ]
+     * 采用时间戳加盐的强随机探针，彻底避开权威与递归 DNS 的短时缓存
      */
     public function detect(string $mainDomain, ?array $proxy = null): array
     {
         $wildcardIps = [];
         $wildcardCnames = [];
 
-        // 生成 3 个强随机绝对不存在的子域名
+        $timeSalt = dechex((int)(microtime(true) * 1000));
         $randomPrefixes = [
-            'rnd-' . bin2hex(random_bytes(6)),
-            'nx-' . bin2hex(random_bytes(6)),
-            'chk-' . bin2hex(random_bytes(6))
+            "rnd-{$timeSalt}-" . bin2hex(random_bytes(4)),
+            "nx-{$timeSalt}-" . bin2hex(random_bytes(4)),
+            "chk-{$timeSalt}-" . bin2hex(random_bytes(4))
         ];
 
         $resolvedCount = 0;
@@ -67,7 +59,6 @@ class WildcardDetector
         $uniqueIps = array_values(array_unique($wildcardIps));
         $uniqueCnames = array_values(array_unique($wildcardCnames));
 
-        // 如果至少 2 个随机域名都能解析到值，断定存在泛解析
         $hasWildcard = $resolvedCount >= 2 && (!empty($uniqueIps) || !empty($uniqueCnames));
 
         return [
@@ -78,9 +69,6 @@ class WildcardDetector
         ];
     }
 
-    /**
-     * 判断解析记录是否命中泛解析黑名单
-     */
     public function isWildcardMatch(string $value, array $wildcardData): bool
     {
         if (empty($wildcardData['has_wildcard'])) {

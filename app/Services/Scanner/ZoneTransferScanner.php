@@ -17,14 +17,9 @@ class ZoneTransferScanner
 
     /**
      * 探测目标主域名是否存在 DNS 区域传送 (AXFR) 配置泄漏
-     *
-     * @param string $mainDomain 目标主域名
-     * @param array|null $proxy 出口代理
-     * @return array ['vulnerable' => bool, 'records' => ['sub1.target.com', ...], 'ns_checked' => [...]]
      */
     public function probeAxfr(string $mainDomain, ?array $proxy = null): array
     {
-        // 1. 查询权威 NS 记录
         $nsRes = $this->dohClient->resolve($mainDomain, 'NS', $proxy);
         if (empty($nsRes['records'])) {
             return ['vulnerable' => false, 'records' => [], 'ns_checked' => []];
@@ -39,13 +34,11 @@ class ZoneTransferScanner
         $discovered = [];
         $isVulnerable = false;
 
-        // 2. 逐个 NS 尝试 TCP 53 AXFR 请求
         foreach ($nsList as $nsServer) {
             $records = $this->tryAxfrSocket($nsServer, $mainDomain);
             if (!empty($records)) {
                 $isVulnerable = true;
                 $discovered = array_merge($discovered, $records);
-                // 成功一次即跳出
                 break;
             }
         }
@@ -58,7 +51,7 @@ class ZoneTransferScanner
     }
 
     /**
-     * 原生 TCP 53 构造 AXFR 传送请求包
+     * 原生 TCP 53 构造 AXFR 传送请求包 (加固解包边界)
      */
     private function tryAxfrSocket(string $nsHost, string $mainDomain): array
     {
@@ -70,7 +63,6 @@ class ZoneTransferScanner
             }
             stream_set_timeout($socket, self::AXFR_TIMEOUT);
 
-            // 构造 DNS QTYPE=252 (AXFR) 请求
             $domainWire = '';
             foreach (explode('.', $mainDomain) as $part) {
                 $domainWire .= chr(strlen($part)) . $part;
@@ -91,15 +83,20 @@ class ZoneTransferScanner
             $lenPrefix = pack('n', strlen($dnsPayload));
             @fwrite($socket, $lenPrefix . $dnsPayload);
 
-            // 读取首个应答长度
             $respLenRaw = @fread($socket, 2);
             if (!$respLenRaw || strlen($respLenRaw) < 2) {
                 fclose($socket);
                 return [];
             }
 
-            $respLen = unpack('n', $respLenRaw)[1];
-            $response = @fread($socket, $respLen);
+            $unpacked = @unpack('n', $respLenRaw);
+            if (!$unpacked || !isset($unpacked[1])) {
+                fclose($socket);
+                return [];
+            }
+            $respLen = $unpacked[1];
+
+            $response = @fread($socket, min($respLen, 65535));
             fclose($socket);
 
             if ($response && strlen($response) > 12) {
@@ -107,9 +104,7 @@ class ZoneTransferScanner
                 $rcode = $flags & 0x000F;
                 $ancount = unpack('n', substr($response, 6, 2))[1];
 
-                // rcode === 0 且存在 Answer 说明允许了区域传送
                 if ($rcode === 0 && $ancount > 0) {
-                    // 正则提取所有符合主域名格式的明文子域名
                     if (preg_match_all('/([a-zA-Z0-9.-]+\.' . preg_quote($mainDomain, '/') . ')/i', $response, $matches)) {
                         foreach ($matches[1] as $sub) {
                             $sub = strtolower(trim($sub, '. '));
@@ -120,9 +115,7 @@ class ZoneTransferScanner
                     }
                 }
             }
-        } catch (\Throwable $e) {
-            // 静默降级
-        }
+        } catch (\Throwable $e) {}
 
         return $records;
     }

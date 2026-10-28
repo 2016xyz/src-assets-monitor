@@ -14,14 +14,6 @@ class AssetNameResolver
 
     /**
      * 解析子域名的资产名称与来源
-     *
-     * @param string $subdomain 子域名 (如 oa.target.com)
-     * @param string $mainDomain 归属主域名 (如 target.com)
-     * @param string $recordType 解析类型 (A, CNAME 等)
-     * @param string|null $recordValue 当前解析指向值 (IP 或 CNAME 目标)
-     * @param string|null $aliasName 用户自定义别名
-     * @param array|null $proxy 域名绑定的网络出口代理节点
-     * @return array ['asset_name' => string, 'asset_name_source' => string, 'asset_name_updated_at' => string]
      */
     public function resolve(
         string $subdomain,
@@ -48,7 +40,6 @@ class AssetNameResolver
 
         // 2 & 3: http_title & http_server 探测
         if ($enableHttp && (microtime(true) - $startTime) < self::MAX_TOTAL_TIMEOUT) {
-            // 限速：每域名 1 QPS
             $this->applyDomainRateLimit($mainDomain);
 
             $httpInfo = $this->probeHttp($subdomain, $mainDomain, $proxy);
@@ -125,7 +116,7 @@ class AssetNameResolver
                     $title = $this->extractTitle($resp['body']);
                     if (!empty($title)) {
                         $result['title'] = $title;
-                        break; // 成功提取到标题立即退出
+                        break;
                     }
                 }
             }
@@ -148,12 +139,9 @@ class AssetNameResolver
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 SRC-Monitor/1.0');
-
-        // 安全限制：仅跟随相同主域名的重定向
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 SRC-Monitor/1.2');
 
-        // 注入出站代理
         if ($proxy) {
             $this->applyProxy($ch, $proxy);
         }
@@ -170,13 +158,12 @@ class AssetNameResolver
         // 校验最终重定向地址是否跳出了主域名
         $finalHost = parse_url($effectiveUrl, PHP_URL_HOST);
         if ($finalHost && !str_ends_with(strtolower($finalHost), strtolower($mainDomain))) {
-            return ['success' => false]; // 外部域重定向丢弃
+            return ['success' => false];
         }
 
         $headerText = substr($response, 0, $headerSize);
         $body = substr($response, $headerSize);
 
-        // 提取 Server 或 X-Powered-By 标头
         $server = null;
         if (preg_match('/^Server:\s*(.+)$/mi', $headerText, $m)) {
             $server = trim($m[1]);
@@ -192,11 +179,10 @@ class AssetNameResolver
     }
 
     /**
-     * 标题提取与深度安全清洗 (防 XSS、实体解码再转义、截断 120 字)
+     * 标题提取与深度安全清洗 (自动转码 GBK/GB2312、防 XSS、实体解码再转义、截断 120 字)
      */
     private function extractTitle(string $html): ?string
     {
-        // 只检查前 64KB HTML，提升性能防正则挂起
         $sample = substr($html, 0, 65536);
 
         if (!preg_match('/<title[^>]*>(.*?)<\/title>/is', $sample, $matches)) {
@@ -204,6 +190,14 @@ class AssetNameResolver
         }
 
         $rawTitle = $matches[1];
+
+        // 自动编码探测与转码 (支持 GBK / GB2312 / BIG5 等老旧资产编码无损转换)
+        if (function_exists('mb_detect_encoding') && function_exists('mb_convert_encoding')) {
+            $encoding = mb_detect_encoding($rawTitle, ['UTF-8', 'GBK', 'GB2312', 'BIG5', 'ISO-8859-1'], true);
+            if ($encoding && strtoupper($encoding) !== 'UTF-8') {
+                $rawTitle = mb_convert_encoding($rawTitle, 'UTF-8', $encoding);
+            }
+        }
 
         // 1. 过滤 HTML 标签
         $clean = strip_tags($rawTitle);
@@ -228,9 +222,6 @@ class AssetNameResolver
         return $safeTitle;
     }
 
-    /**
-     * 格式化服务器标识
-     */
     private function formatServerName(string $subdomain, string $server): string
     {
         $cleanServer = preg_replace('/[^\w\.\-\/\s]/', '', $server);
@@ -239,9 +230,6 @@ class AssetNameResolver
         return mb_substr($formatted, 0, self::MAX_TITLE_LEN, 'UTF-8');
     }
 
-    /**
-     * PTR 反查
-     */
     private function resolvePtr(string $ip): ?string
     {
         try {
@@ -249,15 +237,10 @@ class AssetNameResolver
             if ($ptr && $ptr !== $ip && filter_var($ptr, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
                 return mb_substr(trim($ptr), 0, self::MAX_TITLE_LEN, 'UTF-8');
             }
-        } catch (\Throwable $e) {
-            // 静默降级
-        }
+        } catch (\Throwable $e) {}
         return null;
     }
 
-    /**
-     * 检查设置项：是否开启 HTTP 探针
-     */
     private function isHttpProbeEnabled(): bool
     {
         try {
@@ -268,9 +251,6 @@ class AssetNameResolver
         }
     }
 
-    /**
-     * 每域名 1 QPS 频率保护
-     */
     private function applyDomainRateLimit(string $mainDomain): void
     {
         $key = 'asset_probe_lock_' . md5($mainDomain);
@@ -282,9 +262,6 @@ class AssetNameResolver
         Cache::set($key, microtime(true), 10);
     }
 
-    /**
-     * 代理设置
-     */
     private function applyProxy($ch, array $proxy): void
     {
         $proto = strtolower($proxy['protocol'] ?? 'http');
@@ -294,7 +271,6 @@ class AssetNameResolver
             'socks5h' => CURLPROXY_SOCKS5_HOSTNAME,
             default   => CURLPROXY_HTTP
         };
-
         curl_setopt($ch, CURLOPT_PROXYTYPE, $proxyType);
         curl_setopt($ch, CURLOPT_PROXY, "{$proxy['host']}:{$proxy['port']}");
 

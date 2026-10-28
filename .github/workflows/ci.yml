@@ -8,7 +8,7 @@ on:
 
 jobs:
   php-test:
-    name: PHP Quality & Discovery Tests
+    name: PHP Quality, Security & Deep Logic Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +32,9 @@ jobs:
 
       - name: Run Expanded Discovery Tests
         run: php tests/ExpandedAssetDiscoveryTest.php
+
+      - name: Run Deep Logic & Edge Case Audit Tests
+        run: php tests/DeepLogicAudit.php
 
   docker-lint:
     name: Docker Configuration Lint

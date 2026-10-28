@@ -127,11 +127,14 @@ class DomainController
     public function destroy(Request $request, $id): void
     {
         $id = (int)$id;
+        // 彻底级联删除所有关联业务表，无孤儿数据残留
         Database::delete('domains', 'id = ?', [$id]);
         Database::delete('subdomains', 'domain_id = ?', [$id]);
         Database::delete('dns_snapshots', 'domain_id = ?', [$id]);
         Database::delete('change_logs', 'domain_id = ?', [$id]);
-        Response::json(null, 0, '已下线并删除');
+        Database::delete('domain_channel', 'domain_id = ?', [$id]);
+        Database::delete('scan_tasks', 'domain_id = ?', [$id]);
+        Response::json(null, 0, '已下线并级联清理');
     }
 
     public function scan(Request $request, $id): void
@@ -190,6 +193,7 @@ class DomainController
                 'latency_ms' => 12,
                 'status'     => 'pass'
             ]);
+            return;
         }
 
         if (!$groupId) {

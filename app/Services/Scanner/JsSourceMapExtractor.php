@@ -5,7 +5,7 @@ namespace App\Services\Scanner;
 class JsSourceMapExtractor
 {
     private const JS_FETCH_TIMEOUT = 4;
-    private const MAX_JS_FILES = 5; // 单次只深入前 5 个核心 JS
+    private const MAX_JS_FILES = 5;
 
     /**
      * 挖掘 Web 资产关联的 JS 与 Source Map
@@ -30,11 +30,10 @@ class JsSourceMapExtractor
                 $jsContent = $this->fetchUrl($fullScriptUrl, $proxy);
 
                 if ($jsContent) {
-                    // 正则提取 JS 中的子域名
                     $discovered = array_merge($discovered, $this->matchDomainsInText($jsContent, $mainDomain));
 
                     // 3. 尝试探测 Source Map (.map)
-                    $mapUrl = $fullScriptUrl . '.map';
+                    $mapUrl = preg_replace('/\?.*$/', '', $fullScriptUrl) . '.map';
                     $mapContent = $this->fetchUrl($mapUrl, $proxy);
                     if ($mapContent && str_starts_with(trim($mapContent), '{')) {
                         $json = json_decode($mapContent, true);
@@ -80,7 +79,8 @@ class JsSourceMapExtractor
         $parts = parse_url($base);
         $scheme = $parts['scheme'] ?? 'https';
         $host = $parts['host'] ?? '';
-        return "{$scheme}://{$host}/" . ltrim($rel, '/');
+        $port = isset($parts['port']) ? ':' . $parts['port'] : '';
+        return "{$scheme}://{$host}{$port}/" . ltrim($rel, '/');
     }
 
     private function fetchUrl(string $url, ?array $proxy): ?string
