@@ -5,19 +5,22 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
+use App\Services\Scanner\AssetDeepProbe;
 use App\Services\Scanner\AssetNameResolver;
 
 class SubdomainController
 {
     private AssetNameResolver $nameResolver;
+    private AssetDeepProbe $deepProbe;
 
     public function __construct()
     {
         $this->nameResolver = new AssetNameResolver();
+        $this->deepProbe = new AssetDeepProbe();
     }
 
     /**
-     * GET /api/v1/subdomains - 检索存活子域名资产 (支持按资产名称和来源筛选)
+     * GET /api/v1/subdomains - 检索特定主域名下的存活子域名资产
      */
     public function index(Request $request): void
     {
@@ -30,6 +33,7 @@ class SubdomainController
         $status = $request->query('status');
         $type = $request->query('record_type');
         $nameSource = $request->query('asset_name_source');
+        $takeoverOnly = (bool)$request->query('takeover_only', false);
 
         $where = ["1=1"];
         $params = [];
@@ -39,7 +43,6 @@ class SubdomainController
             $params[] = $domainId;
         }
         if ($kw) {
-            // 支持子域名、解析值、资产名称、别名模糊匹配
             $where[] = "(subdomain LIKE ? OR record_value LIKE ? OR asset_name LIKE ? OR alias_name LIKE ?)";
             $params[] = "%{$kw}%";
             $params[] = "%{$kw}%";
@@ -58,6 +61,9 @@ class SubdomainController
             $where[] = "asset_name_source = ?";
             $params[] = $nameSource;
         }
+        if ($takeoverOnly) {
+            $where[] = "takeover_risk = 1";
+        }
 
         $whereSql = implode(' AND ', $where);
         $total = Database::count('subdomains', $whereSql, $params);
@@ -69,6 +75,71 @@ class SubdomainController
             'page'      => $page,
             'page_size' => $pageSize
         ]);
+    }
+
+    /**
+     * GET /api/v1/subdomains/all - 全局跨主域名资产总库 (支持接管风险一键筛选与全量检索)
+     */
+    public function getAll(Request $request): void
+    {
+        $page = max(1, (int)$request->query('page', 1));
+        $pageSize = max(1, min(100, (int)$request->query('page_size', 20)));
+        $offset = ($page - 1) * $pageSize;
+
+        $kw = $request->query('keyword');
+        $takeoverOnly = (bool)$request->query('takeover_only', false);
+
+        $where = ["1=1"];
+        $params = [];
+
+        if ($kw) {
+            $where[] = "(s.subdomain LIKE ? OR s.asset_name LIKE ? OR s.record_value LIKE ? OR d.domain LIKE ?)";
+            $params[] = "%{$kw}%";
+            $params[] = "%{$kw}%";
+            $params[] = "%{$kw}%";
+            $params[] = "%{$kw}%";
+        }
+        if ($takeoverOnly) {
+            $where[] = "s.takeover_risk = 1";
+        }
+
+        $whereSql = implode(' AND ', $where);
+        $total = Database::count('subdomains s LEFT JOIN domains d ON d.id = s.domain_id', $whereSql, $params);
+
+        $sql = "
+            SELECT s.*, d.domain as main_domain, d.group_name
+            FROM subdomains s
+            LEFT JOIN domains d ON d.id = s.domain_id
+            WHERE {$whereSql}
+            ORDER BY s.takeover_risk DESC, s.id DESC LIMIT {$pageSize} OFFSET {$offset}
+        ";
+        $list = Database::fetchAll($sql, $params);
+
+        Response::json([
+            'list'      => $list,
+            'total'     => $total,
+            'page'      => $page,
+            'page_size' => $pageSize
+        ]);
+    }
+
+    /**
+     * GET /api/v1/subdomains/{id}/portrait - 获取单条子域名实时深度全景画像 (含SSL/Web/DNS)
+     */
+    public function getPortrait(Request $request, $id): void
+    {
+        $id = (int)$id;
+        $sub = Database::fetchOne("SELECT * FROM subdomains WHERE id = ?", [$id]);
+        if (!$sub) {
+            Response::error('资产不存在', 404);
+        }
+
+        $domain = Database::fetchOne("SELECT * FROM domains WHERE id = ?", [$sub['domain_id']]);
+        $portrait = $this->deepProbe->inspect($sub['subdomain']);
+        $portrait['asset_record'] = $sub;
+        $portrait['main_domain'] = $domain ? $domain['domain'] : '';
+
+        Response::json($portrait);
     }
 
     /**
@@ -87,7 +158,6 @@ class SubdomainController
         $now = date('Y-m-d H:i:s');
 
         if ($alias !== null && $alias !== '') {
-            // 设置了别名 -> asset_name 同步为别名，来源标记为 alias
             $safeAlias = htmlspecialchars($alias, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             Database::update('subdomains', [
                 'alias_name'            => $safeAlias,
@@ -104,7 +174,6 @@ class SubdomainController
                 'asset_name_source' => 'alias'
             ], 0, '自定义别名已生效');
         } else {
-            // 清空别名 -> 重新执行优先级链解析
             $domain = Database::fetchOne("SELECT domain, proxy_mode, proxy_group_id FROM domains WHERE id = ?", [$sub['domain_id']]);
             $mainDomain = $domain ? $domain['domain'] : $sub['subdomain'];
 

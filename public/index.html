@@ -150,6 +150,7 @@
     .soft-tag.fail { background: #FEF2F2; color: #EF4444; }
     .soft-tag.warn { background: #FFFBEB; color: #F59E0B; }
     .soft-tag.brand { background: #EFF6FF; color: #2563EB; }
+    .soft-tag.danger { background: #FEF2F2; color: #DC2626; font-weight: 600; border: 1px solid rgba(220, 38, 38, 0.2); }
 
     .action-link { background: none; border: none; color: var(--brand-600); cursor: pointer; font-size: 12px; margin-right: 8px; }
     .action-link.danger { color: var(--danger); }
@@ -178,6 +179,16 @@
       word-break: break-all;
     }
     .chan-actions { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border); padding-top: 10px; }
+
+    /* 全景画像抽屉卡片 */
+    .portrait-section {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);
+      padding: 14px 16px; margin-bottom: 14px;
+    }
+    .portrait-sec-title { font-size: 13.5px; font-weight: 700; color: var(--text-1); margin: 0 0 10px 0; }
+    .prop-row { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px; }
+    .prop-row .lbl { color: var(--text-3); }
+    .prop-row .val { color: var(--text-1); font-weight: 500; font-family: monospace; }
   </style>
 </head>
 <body>
@@ -332,6 +343,9 @@
           <button class="menu-btn" :class="{ active: currentTab === 'domains' }" @click="currentTab = 'domains'">
             🌐 资产域名管理
           </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'all_subdomains' }" @click="currentTab = 'all_subdomains'; fetchAllSubdomains();">
+            🎯 全景子域名资产库
+          </button>
           <button class="menu-btn" :class="{ active: currentTab === 'logs' }" @click="currentTab = 'logs'; fetchTaskLogs();">
             📜 任务与运行日志
           </button>
@@ -453,7 +467,63 @@
             </div>
           </div>
 
-          <!-- Tab 3: 任务与系统运行日志 -->
+          <!-- Tab 3: 全景子域名资产库 (全局跨主域名检索与画像探查) -->
+          <div v-if="currentTab === 'all_subdomains'">
+            <div class="card-panel">
+              <div class="panel-head">
+                <div>
+                  <h4 class="panel-title">全景子域名资产总库</h4>
+                  <span style="font-size:12px; color:var(--text-3);">集中检索全网存活资产、识别接管风险、查看深度 SSL 证书与指纹画像</span>
+                </div>
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <input v-model="allSubKeyword" class="input-theme" style="width:200px; padding:6px 10px; font-size:12px;" placeholder="子域名 / 资产名称模糊搜索" @keyup.enter="allSubPage = 1; fetchAllSubdomains();">
+                  <label style="font-size:12.5px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                    <input type="checkbox" v-model="allSubTakeoverOnly" @change="allSubPage = 1; fetchAllSubdomains();">
+                    <strong style="color:var(--danger)">⚠️ 仅看接管风险资产</strong>
+                  </label>
+                  <button class="ghost-btn-sm" @click="allSubPage = 1; fetchAllSubdomains();">检索</button>
+                </div>
+              </div>
+
+              <el-table :data="allSubList" v-loading="allSubLoading" style="width: 100%">
+                <el-table-column label="资产名称" min-width="200">
+                  <template #default="{ row }">
+                    <strong>{{ row.asset_name || row.subdomain }}</strong>
+                    <div style="font-size:11px; color:var(--text-3)">{{ row.subdomain }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="main_domain" label="归属主域名" width="140" />
+                <el-table-column prop="record_type" label="类型" width="80" />
+                <el-table-column prop="record_value" label="解析指向值" min-width="180">
+                  <template #default="{ row }">
+                    <span style="font-family:monospace; font-size:12px;">{{ row.record_value }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="风险评估" width="120">
+                  <template #default="{ row }">
+                    <span v-if="row.takeover_risk" class="soft-tag danger" :title="row.takeover_reason">⚠️ 接管风险</span>
+                    <span v-else class="soft-tag pass">安全</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="source" label="发现来源" width="100" />
+                <el-table-column label="操作" width="130" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="inspectPortrait(row)">全景画像探查</button>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <div class="pagination-bar">
+                <span>共计 {{ allSubTotal }} 条资产记录 · 当前第 {{ allSubPage }} / {{ Math.ceil(allSubTotal / allSubPageSize) || 1 }} 页</span>
+                <div class="page-nav">
+                  <button class="ghost-btn-sm" :disabled="allSubPage <= 1" @click="allSubPage--; fetchAllSubdomains();">上一页</button>
+                  <button class="ghost-btn-sm" :disabled="allSubPage >= Math.ceil(allSubTotal / allSubPageSize)" @click="allSubPage++; fetchAllSubdomains();">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: 任务与系统运行日志 -->
           <div v-if="currentTab === 'logs'">
             <div class="card-panel">
               <div class="panel-head">
@@ -556,7 +626,7 @@
             </div>
           </div>
 
-          <!-- Tab 4: 多用户团队管理 (强制绑定邮箱，多用户配置) -->
+          <!-- Tab 5: 多用户团队管理 -->
           <div v-if="currentTab === 'users'">
             <div class="card-panel">
               <div class="panel-head">
@@ -614,7 +684,7 @@
             </div>
           </div>
 
-          <!-- Tab 5: 代理池管理 -->
+          <!-- Tab 6: 代理池管理 -->
           <div v-if="currentTab === 'proxies'">
             <div class="card-panel">
               <div class="panel-head">
@@ -649,7 +719,7 @@
             </div>
           </div>
 
-          <!-- Tab 6: 告警通道管理 -->
+          <!-- Tab 7: 告警通道管理 -->
           <div v-if="currentTab === 'channels'">
             <div class="card-panel">
               <div class="panel-head">
@@ -683,7 +753,7 @@
             </div>
           </div>
 
-          <!-- Tab 7: 系统设置 -->
+          <!-- Tab 8: 系统设置 -->
           <div v-if="currentTab === 'settings'">
             <div class="card-panel">
               <h4 class="panel-title" style="margin-bottom:12px;">内置子域名字典维护</h4>
@@ -700,7 +770,83 @@
         </div>
       </main>
 
-      <!-- 弹窗: 当前用户修改用户名、密码与强制绑定邮箱 -->
+      <!-- 弹窗: 单条子域名全景画像探查抽屉 -->
+      <el-drawer v-model="showPortraitDrawer" :title="`子域名资产全景画像 - [${portraitData?.subdomain || ''}]`" size="580px">
+        <div v-if="portraitLoading" style="text-align:center; padding:40px; color:var(--text-3);">
+          正在发起多维探针 (DNS/HTTP/SSL/归属)...
+        </div>
+        <div v-else-if="portraitData" style="display:flex; flex-direction:column; gap:14px;">
+          <!-- 1. HTTP 状态 -->
+          <div class="portrait-section">
+            <h5 class="portrait-sec-title">🌐 Web 服务状态与响应标头</h5>
+            <div class="prop-row">
+              <span class="lbl">HTTP 状态码:</span>
+              <span class="val">
+                <span class="soft-tag" :class="portraitData.http_probe?.accessible ? 'pass' : 'fail'">
+                  {{ portraitData.http_probe?.http_code ? (portraitData.http_probe.scheme + ' ' + portraitData.http_probe.http_code) : '不可达' }}
+                </span>
+              </span>
+            </div>
+            <div class="prop-row">
+              <span class="lbl">Web 服务器指纹:</span>
+              <span class="val">{{ portraitData.http_probe?.server || '未识别' }}</span>
+            </div>
+            <div class="prop-row">
+              <span class="lbl">网页 HTML 标题:</span>
+              <span class="val" style="color:var(--brand-700)">{{ portraitData.http_probe?.title || '无标题' }}</span>
+            </div>
+            <div class="prop-row" v-if="portraitData.http_probe?.redirect_url">
+              <span class="lbl">跳转重定向终点:</span>
+              <span class="val">{{ portraitData.http_probe.redirect_url }}</span>
+            </div>
+          </div>
+
+          <!-- 2. SSL/TLS 证书深度解析 -->
+          <div class="portrait-section">
+            <h5 class="portrait-sec-title">🔒 SSL/TLS 证书与有效期</h5>
+            <div v-if="portraitData.ssl_cert">
+              <div class="prop-row">
+                <span class="lbl">通用名 (CN):</span>
+                <span class="val">{{ portraitData.ssl_cert.common_name }}</span>
+              </div>
+              <div class="prop-row">
+                <span class="lbl">颁发机构 (Issuer):</span>
+                <span class="val">{{ portraitData.ssl_cert.issuer }}</span>
+              </div>
+              <div class="prop-row">
+                <span class="lbl">证书到期时间:</span>
+                <span class="val">{{ portraitData.ssl_cert.valid_to }}</span>
+              </div>
+              <div class="prop-row">
+                <span class="lbl">证书有效剩余:</span>
+                <span class="val">
+                  <span class="soft-tag" :class="portraitData.ssl_cert.days_remaining > 14 ? 'pass' : 'warn'">
+                    {{ portraitData.ssl_cert.days_remaining }} 天
+                  </span>
+                </span>
+              </div>
+              <div class="prop-row" style="flex-direction:column; gap:4px; margin-top:8px;">
+                <span class="lbl">证书覆盖 SAN 列表 ({{ portraitData.ssl_cert.sans?.length || 0 }}个):</span>
+                <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;">
+                  <span v-for="san in portraitData.ssl_cert.sans" :key="san" class="soft-tag brand" style="font-size:10px;">{{ san }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else style="font-size:12px; color:var(--text-3)">未检测到对端 443 端口提供 TLS 证书</div>
+          </div>
+
+          <!-- 3. DNS 与解析链路 -->
+          <div class="portrait-section">
+            <h5 class="portrait-sec-title">📡 DNS 解析全记录</h5>
+            <div v-for="(rec, idx) in portraitData.dns_records" :key="idx" class="prop-row">
+              <span class="lbl">{{ rec.type }} (TTL {{ rec.ttl }}):</span>
+              <span class="val">{{ rec.value }}</span>
+            </div>
+          </div>
+        </div>
+      </el-dialog>
+
+      <!-- 弹窗: 个人资料修改 -->
       <el-dialog v-model="showProfileModal" title="个人账户安全与资料修改" width="480px">
         <el-tabs v-model="profileTab">
           <el-tab-pane label="基本资料 (用户名/邮箱)" name="profile">
@@ -744,7 +890,7 @@
         </el-tabs>
       </el-dialog>
 
-      <!-- 弹窗: 新增多用户团队成员 -->
+      <!-- 弹窗: 新增团队成员 -->
       <el-dialog v-model="showAddUserModal" title="新增团队成员账号" width="460px">
         <div class="form-item">
           <label>登录用户名</label>
@@ -1002,6 +1148,20 @@
         const dictionary = ref([]);
         const newWord = ref('');
 
+        // 全景资产总库状态
+        const allSubList = ref([]);
+        const allSubTotal = ref(0);
+        const allSubPage = ref(1);
+        const allSubPageSize = ref(15);
+        const allSubLoading = ref(false);
+        const allSubKeyword = ref('');
+        const allSubTakeoverOnly = ref(false);
+
+        // 单条画像探针抽屉状态
+        const showPortraitDrawer = ref(false);
+        const portraitLoading = ref(false);
+        const portraitData = ref(null);
+
         // 个人资料与修改密码
         const showProfileModal = ref(false);
         const profileTab = ref('profile');
@@ -1170,10 +1330,45 @@
           fetchDomains();
           fetchTaskLogs();
           fetchStageLogs();
+          fetchAllSubdomains();
           fetchUsers();
           fetchProxies();
           fetchChannels();
           fetchSettings();
+        };
+
+        // 全景资产总库拉取
+        const fetchAllSubdomains = async () => {
+          allSubLoading.value = true;
+          try {
+            const { data } = await axios.get('/api/v1/subdomains/all', {
+              params: {
+                page: allSubPage.value,
+                page_size: allSubPageSize.value,
+                keyword: allSubKeyword.value,
+                takeover_only: allSubTakeoverOnly.value ? 1 : 0
+              }
+            });
+            allSubList.value = data.data.list;
+            allSubTotal.value = data.data.total;
+          } catch(e) {} finally {
+            allSubLoading.value = false;
+          }
+        };
+
+        // 单条全景画像探查
+        const inspectPortrait = async (row) => {
+          showPortraitDrawer.value = true;
+          portraitLoading.value = true;
+          portraitData.value = null;
+          try {
+            const { data } = await axios.get(`/api/v1/subdomains/${row.id}/portrait`);
+            portraitData.value = data.data;
+          } catch(e) {
+            ElementPlus.ElMessage.error('画像探针执行失败');
+          } finally {
+            portraitLoading.value = false;
+          }
         };
 
         // 个人中心逻辑
@@ -1355,6 +1550,7 @@
             fetchDashboard();
             fetchTaskLogs();
             fetchStageLogs();
+            fetchAllSubdomains();
           } catch(e) {
             ElementPlus.ElMessage.error('检测失败');
           }
@@ -1503,6 +1699,8 @@
           handleTestDb, handleNextInstall,
           loginForm, captchaSvg, loginLoading, handleLogin, handleLogout, fetchCaptcha,
           currentTab, stats, timelineLogs, domainList, proxyList, channelList, dictionary, newWord,
+          allSubList, allSubTotal, allSubPage, allSubPageSize, allSubLoading, allSubKeyword, allSubTakeoverOnly, fetchAllSubdomains, inspectPortrait,
+          showPortraitDrawer, portraitLoading, portraitData,
           showProfileModal, profileTab, profileSaving, passwordSaving, profileForm, passwordForm, openProfileModal, submitUpdateProfile, submitUpdatePassword,
           userList, userTotal, userPage, userPageSize, userListLoading, showAddUserModal, addUserForm, showEditUserModal, editUserForm, fetchUsers, submitAddUser, openEditUser, submitEditUser, handleDeleteUser,
           taskLogList, taskLogTotal, taskLogPage, taskLogPageSize, taskLogLoading, fetchTaskLogs,

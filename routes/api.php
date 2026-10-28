@@ -58,8 +58,10 @@ $router->post('/api/v1/domains/{id}/proxy-test',[DomainController::class, 'testP
 $router->post('/api/v1/domains/{id}/resolve-names', [SubdomainController::class, 'resolveDomainNames'], $auth);
 $router->get('/api/v1/subdomains/export',       [DomainController::class, 'exportCsv'], $auth);
 
-// === 6. 子域名资产与名称识别 ===
+// === 6. 子域名资产、全景画像与名称识别 ===
 $router->get('/api/v1/subdomains',                    [SubdomainController::class, 'index'], $auth);
+$router->get('/api/v1/subdomains/all',                [SubdomainController::class, 'getAll'], $auth);
+$router->get('/api/v1/subdomains/{id}/portrait',      [SubdomainController::class, 'getPortrait'], $auth);
 $router->put('/api/v1/subdomains/{id}/alias',         [SubdomainController::class, 'updateAlias'], $auth);
 $router->post('/api/v1/subdomains/{id}/resolve-name', [SubdomainController::class, 'resolveSingleName'], $auth);
 
