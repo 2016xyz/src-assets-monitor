@@ -23,8 +23,12 @@ class NotificationManager
     {
         $this->scheduler = $scheduler;
         $this->notifiers = [
-            'wecom' => new WeComNotifier(),
-            'email' => new EmailNotifier(),
+            'wecom'    => new WeComNotifier(),
+            'dingtalk' => new DingTalkNotifier(),
+            'feishu'   => new FeishuNotifier(),
+            'telegram' => new TelegramNotifier(),
+            'email'    => new EmailNotifier(),
+            'webhook'  => new GenericWebhookNotifier(),
         ];
     }
 
@@ -56,7 +60,7 @@ class NotificationManager
                 continue;
             }
 
-            $type = $chan['type'] ?? 'wecom';
+            $type = strtolower($chan['type'] ?? 'wecom');
             $notifier = $this->notifiers[$type] ?? $this->notifiers['wecom'];
             $config = json_decode($chan['config'] ?? '{}', true) ?: [];
 
@@ -94,9 +98,6 @@ class NotificationManager
         }
     }
 
-    /**
-     * Markdown 格式渲染 (包含资产名称、来源与聚合规则)
-     */
     public function formatMarkdown(string $domain, array $changes): string
     {
         $tags = [
@@ -113,7 +114,6 @@ class NotificationManager
         $lines[] = "";
 
         if (count($changes) === 1) {
-            // 单条通知
             $item = $changes[0];
             $displayName = $this->resolveDisplayName($item['asset_name'] ?? '', $item['subdomain']);
             $sourceName = self::SOURCE_LABELS[$item['asset_name_source'] ?? 'hostname'] ?? '未识别';
@@ -125,7 +125,6 @@ class NotificationManager
             $lines[] = "- **解析记录**: `" . ($item['new_value'] ?: 'NXDOMAIN (失效)') . "`";
             $lines[] = "- **名称来源**: {$sourceName}";
         } else {
-            // 同轮多条聚合通知
             $lines[] = "**变动明细聚合清单**:";
             foreach ($changes as $item) {
                 $displayName = $this->resolveDisplayName($item['asset_name'] ?? '', $item['subdomain']);
@@ -139,9 +138,6 @@ class NotificationManager
         return implode("\n", $lines);
     }
 
-    /**
-     * 邮件文本与模板渲染 (遵循题目格式与回退规则)
-     */
     public function formatEmailBody(string $domain, array $changes): string
     {
         $templateFn = require __DIR__ . '/templates/alert_email.php';
@@ -165,7 +161,6 @@ class NotificationManager
             ]);
         }
 
-        // 多条聚合邮件
         $lines = [];
         $lines[] = "资产监控告警 (聚合推送)";
         $lines[] = "────────────────";

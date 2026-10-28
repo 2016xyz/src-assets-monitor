@@ -2,20 +2,21 @@
   <div class="notify-page view-enter-active">
     <div class="top-bar">
       <div>
-        <h3 class="page-title">告警通知渠道管理</h3>
-        <p class="page-sub">当子域名发生新增、解析变更或失效时，自动聚合推送</p>
+        <h3 class="page-title">告警通知渠道管理中心</h3>
+        <p class="page-sub">全面支持企业微信、钉钉、飞书、Telegram、SMTP 邮件与通用 Webhook 聚合推送</p>
       </div>
       <div class="flex-spacer"></div>
-      <button class="primary-btn" @click="showAddModal = true">+ 新增告警通道</button>
+      <button class="primary-btn" @click="showAddModal = true">+ 新建告警通道</button>
     </div>
 
+    <!-- 渠道卡片栅格展示 -->
     <div class="cards-grid">
       <div v-for="item in channelList" :key="item.id" class="channel-card">
         <div class="card-top">
-          <span class="type-icon">{{ getTypeIcon(item.type) }}</span>
+          <span class="type-icon">{{ getChannelIcon(item.type) }}</span>
           <div class="chan-meta">
             <strong class="chan-name">{{ item.name }}</strong>
-            <span class="chan-type-badge">{{ item.type.toUpperCase() }}</span>
+            <span class="chan-type-badge">{{ formatChannelType(item.type) }}</span>
           </div>
           <div class="flex-spacer"></div>
           <el-switch v-model="item.status" :active-value="1" :inactive-value="0" @change="toggleChannel(item)" />
@@ -24,7 +25,7 @@
         <div class="card-body">
           <div class="info-line">
             <span class="lbl">配置目标:</span>
-            <span class="val truncate">{{ item.type === 'email' ? item.config_parsed?.smtp_user : item.config_parsed?.webhook_url }}</span>
+            <span class="val truncate">{{ getChannelSummary(item) }}</span>
           </div>
           <div class="info-line">
             <span class="lbl">免打扰时段:</span>
@@ -42,8 +43,8 @@
       </div>
     </div>
 
-    <!-- 新增弹窗 -->
-    <el-dialog v-model="showAddModal" title="新建告警通知渠道" width="520px">
+    <!-- 新增全功能渠道弹窗 -->
+    <el-dialog v-model="showAddModal" title="新建告警通知通道" width="540px">
       <div class="dialog-form">
         <div class="form-item">
           <label>渠道名称</label>
@@ -53,15 +54,57 @@
           <label>渠道类型</label>
           <select v-model="form.type" class="select-theme full-w">
             <option value="wecom">企业微信群机器人 (WeCom)</option>
+            <option value="dingtalk">钉钉群机器人 (DingTalk)</option>
+            <option value="feishu">飞书群机器人 (Feishu)</option>
+            <option value="telegram">Telegram 机器人 (Telegram Bot)</option>
             <option value="email">SMTP 邮件推送 (Email)</option>
+            <option value="webhook">通用自定义 Webhook (JSON)</option>
           </select>
         </div>
 
+        <!-- 1. 企业微信 -->
         <div v-if="form.type === 'wecom'" class="form-item">
           <label>企业微信 Webhook 地址</label>
           <input v-model="form.config.webhook_url" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." class="input-custom" />
         </div>
 
+        <!-- 2. 钉钉 -->
+        <div v-if="form.type === 'dingtalk'">
+          <div class="form-item">
+            <label>钉钉机器人 Webhook 地址</label>
+            <input v-model="form.config.webhook_url" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..." class="input-custom" />
+          </div>
+          <div class="form-item">
+            <label>加签密钥 Secret (可选)</label>
+            <input v-model="form.config.secret" placeholder="SEC••••••••" class="input-custom" />
+          </div>
+        </div>
+
+        <!-- 3. 飞书 -->
+        <div v-if="form.type === 'feishu'">
+          <div class="form-item">
+            <label>飞书机器人 Webhook 地址</label>
+            <input v-model="form.config.webhook_url" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." class="input-custom" />
+          </div>
+          <div class="form-item">
+            <label>签名校验 Secret (可选)</label>
+            <input v-model="form.config.secret" placeholder="可选密钥" class="input-custom" />
+          </div>
+        </div>
+
+        <!-- 4. Telegram -->
+        <div v-if="form.type === 'telegram'">
+          <div class="form-item">
+            <label>Telegram Bot Token</label>
+            <input v-model="form.config.bot_token" placeholder="123456789:AAH••••••••••••••••••••••••" class="input-custom" />
+          </div>
+          <div class="form-item">
+            <label>Chat ID (群组或个人ID)</label>
+            <input v-model="form.config.chat_id" placeholder="-100123456789 或 @my_channel" class="input-custom" />
+          </div>
+        </div>
+
+        <!-- 5. SMTP 邮件 -->
         <div v-if="form.type === 'email'" class="email-config-box">
           <div class="form-row">
             <div class="form-item flex-2">
@@ -83,6 +126,16 @@
               <input v-model="form.config.smtp_pass" type="password" placeholder="••••••••" class="input-custom" />
             </div>
           </div>
+          <div class="form-item">
+            <label>收信人邮箱</label>
+            <input v-model="form.config.to_email" placeholder="sec_admin@company.com" class="input-custom" />
+          </div>
+        </div>
+
+        <!-- 6. 通用 Webhook -->
+        <div v-if="form.type === 'webhook'" class="form-item">
+          <label>接收端点 URL</label>
+          <input v-model="form.config.webhook_url" placeholder="https://api.yourdomain.com/alerts/webhook" class="input-custom" />
         </div>
 
         <div class="dialog-footer">
@@ -106,11 +159,52 @@ const testingId = ref<number | null>(null)
 const form = ref<any>({
   name: '',
   type: 'wecom',
-  config: { webhook_url: '', smtp_host: '', smtp_port: 465, smtp_user: '', smtp_pass: '' }
+  config: {
+    webhook_url: '',
+    secret: '',
+    bot_token: '',
+    chat_id: '',
+    smtp_host: 'smtp.exmail.qq.com',
+    smtp_port: 465,
+    smtp_user: '',
+    smtp_pass: '',
+    to_email: ''
+  }
 })
 
-const getTypeIcon = (type: string) => {
-  return type === 'email' ? '📧' : '💬'
+const getChannelIcon = (type: string) => {
+  const map: Record<string, string> = {
+    wecom: '💬',
+    dingtalk: '📌',
+    feishu: '🕊️',
+    telegram: '✈️',
+    email: '📧',
+    webhook: '🌐'
+  }
+  return map[type] || '🔔'
+}
+
+const formatChannelType = (type: string) => {
+  const map: Record<string, string> = {
+    wecom: '企业微信群机器人',
+    dingtalk: '钉钉群机器人',
+    feishu: '飞书群机器人',
+    telegram: 'Telegram 机器人',
+    email: 'SMTP 邮件推送',
+    webhook: '通用 Webhook'
+  }
+  return map[type] || type.toUpperCase()
+}
+
+const getChannelSummary = (chan: any) => {
+  const cfg = chan.config_parsed || {}
+  if (chan.type === 'email') {
+    return `发件: ${cfg.smtp_user || '-'} (接收: ${cfg.to_email || cfg.smtp_user || '-'})`
+  }
+  if (chan.type === 'telegram') {
+    return `Bot Token: ${cfg.bot_token || '-'} (Chat: ${cfg.chat_id || '-'})`
+  }
+  return cfg.webhook_url || chan.config || '-'
 }
 
 const fetchChannels = async () => {
@@ -125,8 +219,8 @@ const fetchChannels = async () => {
 const testChannel = async (item: any) => {
   testingId.value = item.id
   try {
-    await axios.post(`/api/v1/notify-channels/${item.id}/test`)
-    ElMessage.success('测试告警消息已成功发出')
+    const { data } = await axios.post(`/api/v1/notify-channels/${item.id}/test`)
+    ElMessage.success(data.msg || '测试告警消息已成功发出')
   } catch (err: any) {
     ElMessage.error(err.response?.data?.msg || '发送测试失败')
   } finally {
@@ -198,7 +292,7 @@ onMounted(() => {
 .info-line { display: flex; gap: 8px; }
 .info-line .lbl { color: var(--text-3); }
 .info-line .val { color: var(--text-2); }
-.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 
 .card-actions { display: flex; align-items: center; border-top: 1px solid var(--border); padding-top: 12px; }
 .text-btn { background: none; border: none; font-size: 12px; cursor: pointer; }

@@ -154,6 +154,24 @@
       border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2);
     }
     .page-nav { display: flex; gap: 8px; align-items: center; }
+
+    /* 渠道卡片栅格 */
+    .channel-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;
+    }
+    .chan-card {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg);
+      padding: 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 12px;
+    }
+    .chan-header { display: flex; align-items: center; gap: 10px; }
+    .chan-icon { font-size: 24px; }
+    .chan-info { display: flex; flex-direction: column; }
+    .chan-name { font-size: 14px; font-weight: 700; color: var(--text-1); }
+    .chan-summary {
+      font-size: 12px; color: var(--text-2); background: var(--bg); padding: 8px 12px; border-radius: var(--r-sm);
+      word-break: break-all;
+    }
+    .chan-actions { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border); padding-top: 10px; }
   </style>
 </head>
 <body>
@@ -319,7 +337,7 @@
           <button class="menu-btn" :class="{ active: currentTab === 'proxies' }" @click="currentTab = 'proxies'">
             🛡️ 网络代理池
           </button>
-          <button class="menu-btn" :class="{ active: currentTab === 'channels' }" @click="currentTab = 'channels'">
+          <button class="menu-btn" :class="{ active: currentTab === 'channels' }" @click="currentTab = 'channels'; fetchChannels();">
             🔔 告警通知渠道
           </button>
           <button class="menu-btn" :class="{ active: currentTab === 'settings' }" @click="currentTab = 'settings'">
@@ -335,7 +353,7 @@
       <main class="main-body">
         <header class="topbar">
           <div style="font-size:13px; color:var(--text-2);">
-            当前归属管理账号: <strong>{{ userInfo?.username || '管理员' }}</strong>
+            当前管理账号: <strong>{{ userInfo?.username || '管理员' }}</strong>
           </div>
           <div class="flex-1"></div>
           <button class="logout-btn" @click="handleLogout">安全退出 ➔</button>
@@ -430,7 +448,6 @@
 
           <!-- Tab 3: 任务与系统运行日志 (分页显示) -->
           <div v-if="currentTab === 'logs'">
-            <!-- 巡检任务批次日志 (带分页) -->
             <div class="card-panel">
               <div class="panel-head">
                 <div>
@@ -463,10 +480,10 @@
                 </el-table-column>
                 <el-table-column prop="discovered_count" label="发现记录" width="90" />
                 <el-table-column prop="changes_count" label="解析异动" width="90" />
-                <el-table-column label="错误说明 / 耗时" min-width="200">
+                <el-table-column label="说明 / 异常原因" min-width="220">
                   <template #default="{ row }">
                     <span v-if="row.error_message" style="color:var(--danger); font-size:12px;">{{ row.error_message }}</span>
-                    <span v-else style="color:var(--text-3); font-size:12px;">正常完成</span>
+                    <span v-else style="color:var(--text-3); font-size:12px;">巡检完成</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="started_at" label="执行时间" width="160" />
@@ -477,7 +494,6 @@
                 </el-table-column>
               </el-table>
 
-              <!-- 任务日志分页控制栏 -->
               <div class="pagination-bar">
                 <span>共计 {{ taskLogTotal }} 条任务记录 · 当前第 {{ taskLogPage }} / {{ Math.ceil(taskLogTotal / taskLogPageSize) || 1 }} 页</span>
                 <div class="page-nav">
@@ -487,7 +503,6 @@
               </div>
             </div>
 
-            <!-- 详细阶段执行流水 (scan_task_logs 分页显示) -->
             <div class="card-panel">
               <div class="panel-head">
                 <div>
@@ -526,7 +541,6 @@
                 <el-table-column prop="created_at" label="时间戳" width="160" />
               </el-table>
 
-              <!-- 流水日志分页控制栏 -->
               <div class="pagination-bar">
                 <span>共计 {{ stageLogTotal }} 条流水明细 · 当前第 {{ stageLogPage }} / {{ Math.ceil(stageLogTotal / stageLogPageSize) || 1 }} 页</span>
                 <div class="page-nav">
@@ -572,28 +586,42 @@
             </div>
           </div>
 
-          <!-- Tab 5: 告警通道 -->
+          <!-- Tab 5: 告警通道管理 (全面支持 6 大主流渠道) -->
           <div v-if="currentTab === 'channels'">
             <div class="card-panel">
               <div class="panel-head">
-                <h4 class="panel-title">告警推送渠道</h4>
-                <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddChannelModal = true">+ 新建渠道</button>
+                <div>
+                  <h4 class="panel-title">告警推送渠道中心</h4>
+                  <span style="font-size:12px; color:var(--text-3);">支持企业微信、钉钉、飞书、Telegram、SMTP 邮件与通用 Webhook</span>
+                </div>
+                <button class="primary-btn" style="width:auto; padding:6px 14px;" @click="showAddChannelModal = true">+ 新建告警通道</button>
               </div>
-              <el-table :data="channelList" style="width: 100%">
-                <el-table-column prop="name" label="渠道名称" min-width="160" />
-                <el-table-column prop="type" label="类型" width="120" />
-                <el-table-column label="配置摘要" min-width="260">
-                  <template #default="{ row }">
-                    <span style="font-size:12px; color:var(--text-2);">{{ row.config }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="160" fixed="right">
-                  <template #default="{ row }">
-                    <button class="action-link" @click="handleTestChannel(row)">测试发送</button>
-                    <button class="action-link danger" @click="handleDeleteChannel(row)">删除</button>
-                  </template>
-                </el-table-column>
-              </el-table>
+
+              <!-- 渠道卡片栅格展示 -->
+              <div class="channel-grid">
+                <div v-for="chan in channelList" :key="chan.id" class="chan-card">
+                  <div class="chan-header">
+                    <span class="chan-icon">{{ getChannelIcon(chan.type) }}</span>
+                    <div class="chan-info">
+                      <strong class="chan-name">{{ chan.name }}</strong>
+                      <span class="soft-tag brand" style="width:fit-content; margin-top:2px;">{{ formatChannelType(chan.type) }}</span>
+                    </div>
+                  </div>
+                  <div class="chan-summary">
+                    <span>{{ getChannelSummary(chan) }}</span>
+                  </div>
+                  <div class="chan-actions">
+                    <button class="ghost-btn-sm" :disabled="testingChanId === chan.id" @click="handleTestChannel(chan)">
+                      {{ testingChanId === chan.id ? '推送测试中...' : '测试发送' }}
+                    </button>
+                    <button class="action-link danger" @click="handleDeleteChannel(chan)">删除</button>
+                  </div>
+                </div>
+
+                <div v-if="channelList.length === 0" style="grid-column: 1/-1; text-align:center; padding:30px; color:var(--text-3); font-size:13px;">
+                  暂无告警渠道，请点击右上角「新建告警通道」添加。
+                </div>
+              </div>
             </div>
           </div>
 
@@ -614,7 +642,7 @@
         </div>
       </main>
 
-      <!-- 弹窗组件 -->
+      <!-- 弹窗 1: 新增主域名 -->
       <el-dialog v-model="showAddDomainModal" title="新增主域名监控" width="460px">
         <div class="form-item">
           <label>主域名 (FQDN)</label>
@@ -642,6 +670,7 @@
         </div>
       </el-dialog>
 
+      <!-- 弹窗 2: 新增代理 -->
       <el-dialog v-model="showAddProxyModal" title="新增网络代理节点" width="460px">
         <div class="form-item">
           <label>节点名称</label>
@@ -672,18 +701,104 @@
         </div>
       </el-dialog>
 
-      <el-dialog v-model="showAddChannelModal" title="新建告警推送通道" width="460px">
+      <!-- 弹窗 3: 全功能告警渠道配置 (全面支持 6 大主流渠道) -->
+      <el-dialog v-model="showAddChannelModal" title="新建告警推送通道" width="520px">
         <div class="form-item">
           <label>渠道名称</label>
-          <input v-model="addChannelForm.name" class="input-theme" placeholder="安全运维群">
+          <input v-model="addChannelForm.name" class="input-theme" placeholder="如: 应急响应安全群">
         </div>
+
         <div class="form-item">
-          <label>企业微信 Webhook</label>
-          <input v-model="addChannelForm.webhook_url" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+          <label>渠道类型</label>
+          <select v-model="addChannelForm.type" class="input-theme">
+            <option value="wecom">企业微信群机器人 (WeCom)</option>
+            <option value="dingtalk">钉钉群机器人 (DingTalk)</option>
+            <option value="feishu">飞书群机器人 (Feishu)</option>
+            <option value="telegram">Telegram 机器人 (Telegram Bot)</option>
+            <option value="email">SMTP 邮件通知 (Email)</option>
+            <option value="webhook">通用自定义 Webhook (JSON)</option>
+          </select>
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+
+        <!-- 动态配置项 1: 企业微信 -->
+        <div v-if="addChannelForm.type === 'wecom'" class="form-item">
+          <label>企业微信机器人 Webhook 地址</label>
+          <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+        </div>
+
+        <!-- 动态配置项 2: 钉钉 -->
+        <div v-if="addChannelForm.type === 'dingtalk'">
+          <div class="form-item">
+            <label>钉钉机器人 Webhook 地址</label>
+            <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+          </div>
+          <div class="form-item">
+            <label>加签密钥 Secret (可选)</label>
+            <input v-model="addChannelForm.config.secret" class="input-theme" placeholder="SEC••••••••">
+          </div>
+        </div>
+
+        <!-- 动态配置项 3: 飞书 -->
+        <div v-if="addChannelForm.type === 'feishu'">
+          <div class="form-item">
+            <label>飞书机器人 Webhook 地址</label>
+            <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+          </div>
+          <div class="form-item">
+            <label>签名校验 Secret (可选)</label>
+            <input v-model="addChannelForm.config.secret" class="input-theme" placeholder="可选密钥">
+          </div>
+        </div>
+
+        <!-- 动态配置项 4: Telegram -->
+        <div v-if="addChannelForm.type === 'telegram'">
+          <div class="form-item">
+            <label>Telegram Bot Token</label>
+            <input v-model="addChannelForm.config.bot_token" class="input-theme" placeholder="123456789:AAH••••••••••••••••••••••••">
+          </div>
+          <div class="form-item">
+            <label>Chat ID (群组或个人ID)</label>
+            <input v-model="addChannelForm.config.chat_id" class="input-theme" placeholder="-100123456789 或 @my_channel">
+          </div>
+        </div>
+
+        <!-- 动态配置项 5: SMTP 邮件 -->
+        <div v-if="addChannelForm.type === 'email'">
+          <div class="form-grid-2col">
+            <div class="form-item">
+              <label>SMTP 服务器</label>
+              <input v-model="addChannelForm.config.smtp_host" class="input-theme" placeholder="smtp.exmail.qq.com">
+            </div>
+            <div class="form-item">
+              <label>端口</label>
+              <input v-model.number="addChannelForm.config.smtp_port" type="number" class="input-theme" placeholder="465">
+            </div>
+          </div>
+          <div class="form-grid-split">
+            <div class="form-item">
+              <label>发信账号</label>
+              <input v-model="addChannelForm.config.smtp_user" class="input-theme" placeholder="alert@company.com">
+            </div>
+            <div class="form-item">
+              <label>授权码 / 密码</label>
+              <input v-model="addChannelForm.config.smtp_pass" type="password" class="input-theme" placeholder="••••••••">
+            </div>
+          </div>
+          <div class="form-item">
+            <label>收信人邮箱 (默认同发信账号)</label>
+            <input v-model="addChannelForm.config.to_email" class="input-theme" placeholder="sec_admin@company.com">
+          </div>
+        </div>
+
+        <!-- 动态配置项 6: 通用 Webhook -->
+        <div v-if="addChannelForm.type === 'webhook'" class="form-item">
+          <label>接收端点 URL</label>
+          <input v-model="addChannelForm.config.webhook_url" class="input-theme" placeholder="https://api.yourdomain.com/alerts/webhook">
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
           <button class="ghost-btn" @click="showAddChannelModal = false">取消</button>
-          <button class="primary-btn" style="width:auto;" @click="submitAddChannel">确认保存</button>
+          <button class="primary-btn" style="width:auto;" @click="submitAddChannel">保存通道</button>
         </div>
       </el-dialog>
     </div>
@@ -748,8 +863,25 @@
         const addDomainForm = ref({ domain: '', group_name: 'SRC核心', check_interval: '1h', remark: '' });
         const showAddProxyModal = ref(false);
         const addProxyForm = ref({ name: '', host: '', port: 8080, protocol: 'http' });
+        
+        // 全功能告警渠道配置表单
         const showAddChannelModal = ref(false);
-        const addChannelForm = ref({ name: '', webhook_url: '' });
+        const testingChanId = ref(null);
+        const addChannelForm = ref({
+          name: '',
+          type: 'wecom',
+          config: {
+            webhook_url: '',
+            secret: '',
+            bot_token: '',
+            chat_id: '',
+            smtp_host: 'smtp.exmail.qq.com',
+            smtp_port: 465,
+            smtp_user: '',
+            smtp_pass: '',
+            to_email: ''
+          }
+        });
 
         const setupAxiosAuth = () => {
           if (token.value) {
@@ -899,7 +1031,6 @@
           } catch(e) {}
         };
 
-        // 任务日志分页拉取
         const fetchTaskLogs = async () => {
           taskLogLoading.value = true;
           try {
@@ -913,7 +1044,6 @@
           }
         };
 
-        // 阶段流水日志分页拉取
         const fetchStageLogs = async () => {
           stageLogLoading.value = true;
           try {
@@ -958,7 +1088,7 @@
             fetchTaskLogs();
             fetchStageLogs();
           } catch(e) {
-            ElementPlus.ElMessage.error(e.response?.data?.msg || '检测失败');
+            ElementPlus.ElMessage.error('检测失败');
           }
         };
 
@@ -1012,6 +1142,42 @@
           }
         };
 
+        // 告警渠道辅助方法
+        const getChannelIcon = (type) => {
+          const map = {
+            wecom: '💬',
+            dingtalk: '📌',
+            feishu: '🕊️',
+            telegram: '✈️',
+            email: '📧',
+            webhook: '🌐'
+          };
+          return map[type] || '🔔';
+        };
+
+        const formatChannelType = (type) => {
+          const map = {
+            wecom: '企业微信群机器人',
+            dingtalk: '钉钉群机器人',
+            feishu: '飞书群机器人',
+            telegram: 'Telegram 机器人',
+            email: 'SMTP 邮件推送',
+            webhook: '通用 Webhook'
+          };
+          return map[type] || type.toUpperCase();
+        };
+
+        const getChannelSummary = (chan) => {
+          const cfg = chan.config_parsed || {};
+          if (chan.type === 'email') {
+            return `发件: ${cfg.smtp_user || '-'} (接收: ${cfg.to_email || cfg.smtp_user || '-'})`;
+          }
+          if (chan.type === 'telegram') {
+            return `Bot Token: ${cfg.bot_token || '-'} (Chat: ${cfg.chat_id || '-'})`;
+          }
+          return cfg.webhook_url || chan.config || '-';
+        };
+
         const fetchChannels = async () => {
           try {
             const { data } = await axios.get('/api/v1/notify-channels');
@@ -1020,26 +1186,33 @@
         };
 
         const submitAddChannel = async () => {
+          if (!addChannelForm.value.name.trim()) {
+            ElementPlus.ElMessage.warning('请输入渠道名称');
+            return;
+          }
           try {
             await axios.post('/api/v1/notify-channels', {
               name: addChannelForm.value.name,
-              type: 'wecom',
-              config: { webhook_url: addChannelForm.value.webhook_url }
+              type: addChannelForm.value.type,
+              config: addChannelForm.value.config
             });
-            ElementPlus.ElMessage.success('通知渠道已添加');
+            ElementPlus.ElMessage.success('告警通道保存成功');
             showAddChannelModal.value = false;
             fetchChannels();
           } catch(e) {
-            ElementPlus.ElMessage.error('添加失败');
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '保存失败');
           }
         };
 
         const handleTestChannel = async (row) => {
+          testingChanId.value = row.id;
           try {
-            await axios.post(`/api/v1/notify-channels/${row.id}/test`);
-            ElementPlus.ElMessage.success('测试消息已成功推送');
+            const { data } = await axios.post(`/api/v1/notify-channels/${row.id}/test`);
+            ElementPlus.ElMessage.success(data.msg || '测试消息推送成功');
           } catch(e) {
-            ElementPlus.ElMessage.error('测试发送失败');
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '测试发送失败');
+          } finally {
+            testingChanId.value = null;
           }
         };
 
@@ -1085,7 +1258,9 @@
           stageLogList, stageLogTotal, stageLogPage, stageLogPageSize, stageLogLoading, stageFilterLevel, stageFilterTaskId, fetchStageLogs, filterStagesByTask,
           fetchDashboard, fetchDomains, handleScanDomain, exportDomainCsv, handleDeleteDomain,
           fetchProxies, handleTestProxy, handleDeleteProxy,
-          fetchChannels, handleTestChannel, handleDeleteChannel, handleAddWord,
+          getChannelIcon, formatChannelType, getChannelSummary,
+          fetchChannels, handleTestChannel, handleDeleteChannel, testingChanId,
+          handleAddWord,
           showAddDomainModal, addDomainForm, submitAddDomain,
           showAddProxyModal, addProxyForm, submitAddProxy,
           showAddChannelModal, addChannelForm, submitAddChannel
