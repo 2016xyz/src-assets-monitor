@@ -1,5 +1,8 @@
 <?php
 
+// 单元测试环境统一采用轻量 SQLite 驱动，保证无外部 MySQL 守护进程时依然秒级自测
+putenv('DB_CONNECTION=sqlite');
+
 require_once dirname(__DIR__) . '/autoload.php';
 
 use App\Core\Database;

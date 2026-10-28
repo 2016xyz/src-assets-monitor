@@ -10,6 +10,8 @@ jobs:
   php-test:
     name: PHP Quality, Security & Deep Logic Tests
     runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: sqlite
 
     steps:
       - name: Checkout Code
