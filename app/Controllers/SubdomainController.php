@@ -20,7 +20,7 @@ class SubdomainController
     }
 
     /**
-     * GET /api/v1/subdomains - 检索特定主域名下的存活子域名资产
+     * GET /api/v1/subdomains - 检索特定主域名下的子域名资产
      */
     public function index(Request $request): void
     {
@@ -62,7 +62,7 @@ class SubdomainController
 
         $whereSql = implode(' AND ', $where);
         $total = Database::count('subdomains', $whereSql, $params);
-        $list = Database::fetchAll("SELECT * FROM subdomains WHERE {$whereSql} ORDER BY id DESC LIMIT {$pageSize} OFFSET {$offset}", $params);
+        $list = Database::fetchAll("SELECT * FROM subdomains WHERE {$whereSql} ORDER BY status ASC, id DESC LIMIT {$pageSize} OFFSET {$offset}", $params);
 
         Response::json([
             'list'      => $list,
@@ -73,7 +73,7 @@ class SubdomainController
     }
 
     /**
-     * GET /api/v1/subdomains/all - 全局跨主域名资产总库 (支持接管风险一键筛选与全量组合检索)
+     * GET /api/v1/subdomains/all - 全局跨主域名资产总库 (支持状态/接管/全量多维组合检索)
      */
     public function getAll(Request $request): void
     {
@@ -83,6 +83,7 @@ class SubdomainController
 
         $domainId = (int)$request->query('domain_id');
         $kw = $request->query('keyword');
+        $status = $request->query('status');
         $takeoverOnly = (bool)$request->query('takeover_only', false);
         $recordType = $request->query('record_type');
         $source = $request->query('source');
@@ -101,6 +102,10 @@ class SubdomainController
             $params[] = "%{$kw}%";
             $params[] = "%{$kw}%";
         }
+        if ($status) {
+            $where[] = "s.status = ?";
+            $params[] = $status;
+        }
         if ($takeoverOnly) {
             $where[] = "s.takeover_risk = 1";
         }
@@ -109,8 +114,8 @@ class SubdomainController
             $params[] = $recordType;
         }
         if ($source) {
-            $where[] = "s.source = ?";
-            $params[] = $source;
+            $where[] = "s.source LIKE ?";
+            $params[] = "%{$source}%";
         }
 
         $whereSql = implode(' AND ', $where);
@@ -121,19 +126,21 @@ class SubdomainController
             FROM subdomains s
             LEFT JOIN domains d ON d.id = s.domain_id
             WHERE {$whereSql}
-            ORDER BY s.takeover_risk DESC, s.id DESC LIMIT {$pageSize} OFFSET {$offset}
+            ORDER BY s.takeover_risk DESC, s.status ASC, s.id DESC LIMIT {$pageSize} OFFSET {$offset}
         ";
         $list = Database::fetchAll($sql, $params);
 
-        // 统计概览指标
+        // 统计概览全量指标
         $takeoverCount = Database::count('subdomains', 'takeover_risk = 1');
         $activeTotal = Database::count('subdomains', "status = 'active'");
+        $inactiveTotal = Database::count('subdomains', "status = 'nxdomain'");
 
         Response::json([
             'list'           => $list,
             'total'          => $total,
-            'takeover_count' => $takeoverCount,
             'active_total'   => $activeTotal,
+            'inactive_total' => $inactiveTotal,
+            'takeover_count' => $takeoverCount,
             'page'           => $page,
             'page_size'      => $pageSize
         ]);
@@ -167,7 +174,7 @@ class SubdomainController
             SELECT s.subdomain, s.asset_name, s.record_type, s.record_value, s.source, s.status, s.takeover_risk, d.domain as main_domain, s.first_seen_at
             FROM subdomains s
             LEFT JOIN domains d ON d.id = s.domain_id
-            ORDER BY s.domain_id ASC, s.id DESC
+            ORDER BY s.domain_id ASC, s.status ASC, s.id DESC
         ";
         $list = Database::fetchAll($sql);
 
@@ -176,7 +183,6 @@ class SubdomainController
         header('X-Content-Type-Options: nosniff');
 
         $out = fopen('php://output', 'w');
-        // 输出 UTF-8 BOM 防 Excel 乱码
         fputs($out, "\xEF\xBB\xBF");
         fputcsv($out, ['子域名', '资产名称', '解析类型', '解析指向值', '归属主域名', '发现来源', '存活状态', '接管风险', '首次发现时间']);
 
@@ -188,7 +194,7 @@ class SubdomainController
                 $this->sanitizeCsvCell($r['record_value']),
                 $this->sanitizeCsvCell($r['main_domain'] ?? ''),
                 $this->sanitizeCsvCell($r['source']),
-                $this->sanitizeCsvCell($r['status']),
+                $r['status'] === 'active' ? '🟢 存活解析' : '⚪ 未解析/历史',
                 !empty($r['takeover_risk']) ? '⚠️ 是' : '否',
                 $r['first_seen_at']
             ]);
@@ -197,10 +203,6 @@ class SubdomainController
         exit;
     }
 
-    /**
-     * 防范 CSV 公式执行注入 (Excel / Calc Formula Injection)
-     * 若单元格以 =, +, -, @, 制表符开头，前置单引号强制作为纯文本处理
-     */
     private function sanitizeCsvCell(?string $value): string
     {
         if ($value === null || $value === '') {

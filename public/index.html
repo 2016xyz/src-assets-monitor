@@ -473,13 +473,18 @@
               <div class="panel-head">
                 <div>
                   <h4 class="panel-title">全景子域名资产总库</h4>
-                  <span style="font-size:12px; color:var(--text-3);">集中检索全网存活资产、识别接管风险、查看深度 SSL 证书与指纹画像</span>
+                  <span style="font-size:12px; color:var(--text-3);">全景发现已授权目标名下全部现存及历史证书资产，智能识别接管风险与未解析状态</span>
                 </div>
                 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                   <input v-model="allSubKeyword" class="input-theme" style="width:190px; padding:6px 10px; font-size:12px;" placeholder="子域名 / 资产名称模糊搜索" @keyup.enter="allSubPage = 1; fetchAllSubdomains();">
-                  <select v-model="allSubFilterDomain" class="input-theme" style="width:140px; padding:6px 10px; font-size:12px;" @change="allSubPage = 1; fetchAllSubdomains();">
+                  <select v-model="allSubFilterDomain" class="input-theme" style="width:130px; padding:6px 10px; font-size:12px;" @change="allSubPage = 1; fetchAllSubdomains();">
                     <option value="">全部主域名</option>
                     <option v-for="d in domainList" :key="d.id" :value="d.id">{{ d.domain }}</option>
+                  </select>
+                  <select v-model="allSubFilterStatus" class="input-theme" style="width:130px; padding:6px 10px; font-size:12px;" @change="allSubPage = 1; fetchAllSubdomains();">
+                    <option value="">全部状态</option>
+                    <option value="active">🟢 存活解析 (Active)</option>
+                    <option value="nxdomain">⚪ 未解析/历史 (Inactive)</option>
                   </select>
                   <label style="font-size:12.5px; cursor:pointer; display:flex; align-items:center; gap:4px;">
                     <input type="checkbox" v-model="allSubTakeoverOnly" @change="allSubPage = 1; fetchAllSubdomains();">
@@ -490,16 +495,30 @@
                 </div>
               </div>
 
+              <!-- 概览汇总状态栏 -->
+              <div style="display:flex; gap:18px; margin-bottom:14px; font-size:13px; color:var(--text-2); background:var(--bg); padding:10px 14px; border-radius:var(--r-md); border:1px solid var(--border);">
+                <span>全网资产总量: <strong class="tabular-nums" style="color:var(--text-1); font-size:14px;">{{ allSubTotal }}</strong></span>
+                <span>· 🟢 存活解析: <strong class="tabular-nums" style="color:var(--success); font-size:14px;">{{ allSubActiveTotal }}</strong></span>
+                <span>· ⚪ 历史/未解析: <strong class="tabular-nums" style="color:var(--text-3); font-size:14px;">{{ allSubInactiveTotal }}</strong></span>
+                <span>· ⚠️ 悬挂接管风险: <strong class="tabular-nums" style="color:var(--danger); font-size:14px;">{{ allSubTakeoverCount }}</strong></span>
+              </div>
+
               <el-table :data="allSubList" v-loading="allSubLoading" style="width: 100%">
-                <el-table-column label="资产名称" min-width="200">
+                <el-table-column label="资产名称" min-width="190">
                   <template #default="{ row }">
                     <strong>{{ row.asset_name || row.subdomain }}</strong>
                     <div style="font-size:11px; color:var(--text-3)">{{ row.subdomain }}</div>
                   </template>
                 </el-table-column>
                 <el-table-column prop="main_domain" label="归属主域名" width="130" />
+                <el-table-column label="解析状态" width="120">
+                  <template #default="{ row }">
+                    <span v-if="row.status === 'active'" class="soft-tag pass">🟢 存活解析</span>
+                    <span v-else class="soft-tag" style="background:#F1F5F9; color:var(--text-3);">⚪ 历史/未解析</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="record_type" label="类型" width="75" />
-                <el-table-column prop="record_value" label="解析指向值" min-width="180">
+                <el-table-column prop="record_value" label="解析指向值" min-width="190">
                   <template #default="{ row }">
                     <span style="font-family:monospace; font-size:12px;">{{ row.record_value }}</span>
                   </template>
@@ -510,7 +529,7 @@
                     <span v-else class="soft-tag pass">安全</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="source" label="发现来源" width="95" />
+                <el-table-column prop="source" label="发现来源" width="140" />
                 <el-table-column label="操作" width="130" fixed="right">
                   <template #default="{ row }">
                     <button class="action-link" @click="inspectPortrait(row)">全景画像探查</button>
@@ -519,7 +538,7 @@
               </el-table>
 
               <div class="pagination-bar">
-                <span>共计 {{ allSubTotal }} 条资产记录 (其中接管风险 {{ allSubTakeoverCount }} 条) · 当前第 {{ allSubPage }} / {{ Math.ceil(allSubTotal / allSubPageSize) || 1 }} 页</span>
+                <span>共计 {{ allSubTotal }} 条资产记录 (存活 {{ allSubActiveTotal }}，未解析 {{ allSubInactiveTotal }}) · 当前第 {{ allSubPage }} / {{ Math.ceil(allSubTotal / allSubPageSize) || 1 }} 页</span>
                 <div class="page-nav">
                   <button class="ghost-btn-sm" :disabled="allSubPage <= 1" @click="allSubPage--; fetchAllSubdomains();">上一页</button>
                   <button class="ghost-btn-sm" :disabled="allSubPage >= Math.ceil(allSubTotal / allSubPageSize)" @click="allSubPage++; fetchAllSubdomains();">下一页</button>
@@ -1208,6 +1227,9 @@
         const allSubKeyword = ref('');
         const allSubFilterDomain = ref('');
         const allSubTakeoverOnly = ref(false);
+        const allSubFilterStatus = ref('');
+        const allSubActiveTotal = ref(0);
+        const allSubInactiveTotal = ref(0);
 
         // 单条画像探针抽屉状态
         const showPortraitDrawer = ref(false);
@@ -1397,6 +1419,7 @@
               page: allSubPage.value,
               page_size: allSubPageSize.value,
               keyword: allSubKeyword.value,
+              status: allSubFilterStatus.value,
               takeover_only: allSubTakeoverOnly.value ? 1 : 0
             };
             if (allSubFilterDomain.value) {
@@ -1405,6 +1428,8 @@
             const { data } = await axios.get('/api/v1/subdomains/all', { params });
             allSubList.value = data.data.list;
             allSubTotal.value = data.data.total;
+            allSubActiveTotal.value = data.data.active_total || 0;
+            allSubInactiveTotal.value = data.data.inactive_total || 0;
             allSubTakeoverCount.value = data.data.takeover_count || 0;
           } catch(e) {} finally {
             allSubLoading.value = false;
@@ -1758,7 +1783,7 @@
           handleTestDb, handleNextInstall,
           loginForm, captchaSvg, loginLoading, handleLogin, handleLogout, fetchCaptcha,
           currentTab, stats, timelineLogs, domainList, proxyList, channelList, dictionary, newWord,
-          allSubList, allSubTotal, allSubTakeoverCount, allSubPage, allSubPageSize, allSubLoading, allSubKeyword, allSubFilterDomain, allSubTakeoverOnly, fetchAllSubdomains, exportAllSubdomainsCsv, inspectPortrait,
+          allSubList, allSubTotal, allSubActiveTotal, allSubInactiveTotal, allSubTakeoverCount, allSubPage, allSubPageSize, allSubLoading, allSubKeyword, allSubFilterDomain, allSubFilterStatus, allSubTakeoverOnly, fetchAllSubdomains, exportAllSubdomainsCsv, inspectPortrait,
           showPortraitDrawer, portraitLoading, portraitData,
           showProfileModal, profileTab, profileSaving, passwordSaving, profileForm, passwordForm, openProfileModal, submitUpdateProfile, submitUpdatePassword,
           userList, userTotal, userPage, userPageSize, userListLoading, showAddUserModal, addUserForm, showEditUserModal, editUserForm, fetchUsers, submitAddUser, openEditUser, submitEditUser, handleDeleteUser,

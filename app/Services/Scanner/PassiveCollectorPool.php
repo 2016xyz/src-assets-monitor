@@ -3,37 +3,44 @@
 namespace App\Services\Scanner;
 
 use App\Core\Cache;
-use App\Core\Crypto;
 use App\Core\Database;
 
 class PassiveCollectorPool
 {
-    private const SOURCE_TIMEOUT = 5; // 单源超时 5s
-    private const TOTAL_TIMEOUT = 12; // 并发汇总总超时 12s
+    private const SOURCE_TIMEOUT = 8; // 单源超时 8s
+    private const TOTAL_TIMEOUT = 18; // 并发汇总总超时 18s
 
     /**
-     * 并发收集全部被动源
+     * 并发收集全部多轨被动源 (CT 日志 / 历史快照 / 搜索引擎 / DNS 关联)
      *
-     * @param string $mainDomain 目标主域名 (如 example.com)
+     * @param string $mainDomain 目标主域名 (如 2016xlx.cn)
      * @param array|null $proxy 域名出站代理
-     * @return array ['subdomain.example.com' => ['sources' => ['crt.sh', 'hackertarget']]]
+     * @return array ['subdomain.example.com' => ['sources' => ['crt.sh', 'certspotter']]]
      */
     public function collectAll(string $mainDomain, ?array $proxy = null): array
     {
         $normalizedDomain = strtolower(trim($mainDomain, '. '));
+        $resultsMap = []; // [subdomain => ['sources' => [...]]]
+
+        // 1. 优先抓取 crt.sh (HTML 双轨抓取，彻底避免 JSON 接口频发 502 Bad Gateway 丢数据)
+        $crtSubs = $this->collectFromCrtSh($normalizedDomain, $proxy);
+        foreach ($crtSubs as $sub) {
+            $this->appendResult($resultsMap, $sub, 'crt.sh');
+        }
+
+        // 2. cURL multi 并发查询外部各大聚合 API 源
         $multi = curl_multi_init();
         $handles = [];
-
-        // 1. 构建各 HTTP 源请求
         $sourcesConfig = $this->getSourcesConfig($normalizedDomain);
+
         foreach ($sourcesConfig as $sourceName => $cfg) {
             $ch = curl_init($cfg['url']);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_TIMEOUT, self::SOURCE_TIMEOUT);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SRC-Security-Scanner/1.2');
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
             if (!empty($cfg['headers'])) {
                 curl_setopt($ch, CURLOPT_HTTPHEADER, $cfg['headers']);
@@ -46,7 +53,6 @@ class PassiveCollectorPool
             $handles[$sourceName] = $ch;
         }
 
-        // 2. cURL multi 并发执行
         $active = null;
         $start = microtime(true);
         do {
@@ -55,47 +61,88 @@ class PassiveCollectorPool
                 curl_multi_select($multi, 0.05);
             }
             if ((microtime(true) - $start) > self::TOTAL_TIMEOUT) {
-                break; // 触发总超时保护
+                break; // 超时保护
             }
         } while ($active && $mrc == CURLM_OK);
 
-        $resultsMap = []; // [subdomain => ['sources' => [...]]]
-
-        // 3. 读取并解析各源应答
         foreach ($handles as $sourceName => $ch) {
             $content = curl_multi_getcontent($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_multi_remove_handle($multi, $ch);
             curl_close($ch);
 
             if ($httpCode === 200 && !empty($content)) {
                 $subs = $this->parseSourceResponse($sourceName, $content, $normalizedDomain);
                 foreach ($subs as $sub) {
-                    if (!isset($resultsMap[$sub])) {
-                        $resultsMap[$sub] = ['sources' => [$sourceName]];
-                    } elseif (!in_array($sourceName, $resultsMap[$sub]['sources'], true)) {
-                        $resultsMap[$sub]['sources'][] = $sourceName;
-                    }
+                    $this->appendResult($resultsMap, $sub, $sourceName);
                 }
             }
         }
         curl_multi_close($multi);
 
-        // 4. TLS SAN 兜底直连探测 (独立执行，不阻塞 HTTP multi)
+        // 3. 搜索引擎被动嗅探 (Bing / 百度搜索 site:domain 爬虫)
+        $searchSubs = $this->crawlSearchEngines($normalizedDomain, $proxy);
+        foreach ($searchSubs as $sub) {
+            $this->appendResult($resultsMap, $sub, 'search_engine');
+        }
+
+        // 4. DNS 权威记录挖掘 (NS / MX / TXT SPF 内部关联)
+        $dnsZoneSubs = $this->extractDnsZoneHostnames($normalizedDomain);
+        foreach ($dnsZoneSubs as $sub) {
+            $this->appendResult($resultsMap, $sub, 'dns_zone');
+        }
+
+        // 5. TLS SAN 直连探针
         $sanSubs = $this->extractTlsSan($normalizedDomain, $proxy);
         foreach ($sanSubs as $sub) {
-            if (!isset($resultsMap[$sub])) {
-                $resultsMap[$sub] = ['sources' => ['tls_san']];
-            } elseif (!in_array('tls_san', $resultsMap[$sub]['sources'], true)) {
-                $resultsMap[$sub]['sources'][] = 'tls_san';
-            }
+            $this->appendResult($resultsMap, $sub, 'tls_san');
         }
 
         return $resultsMap;
     }
 
     /**
-     * 定义 8+ 被动数据源配置
+     * 专属 crt.sh 弹性抓取：先尝试 HTML 网页检索 (极度稳定，不卡 502)，若不足再补充 JSON
+     */
+    private function collectFromCrtSh(string $domain, ?array $proxy): array
+    {
+        $discovered = [];
+        $urls = [
+            "https://crt.sh/?q=" . urlencode($domain),
+            "https://crt.sh/?q=" . urlencode("%.{$domain}")
+        ];
+
+        foreach ($urls as $url) {
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 7);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+            if ($proxy) {
+                $this->applyProxy($ch, $proxy);
+            }
+            $html = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode === 200 && !empty($html)) {
+                // 正则精准匹配 HTML 页面中所有属于该主域的 FQDN
+                $pattern = '/([a-zA-Z0-9_\-\.]+\.' . preg_quote($domain, '/') . ')/i';
+                if (preg_match_all($pattern, $html, $matches)) {
+                    foreach ($matches[1] as $sub) {
+                        $discovered[] = $sub;
+                    }
+                }
+            }
+        }
+
+        return $this->normalizeSubdomains($discovered, $domain);
+    }
+
+    /**
+     * 定义外部各大权威被动数据源配置
      */
     private function getSourcesConfig(string $domain): array
     {
@@ -103,39 +150,98 @@ class PassiveCollectorPool
         $otxHeaders = $otxKey ? ["X-OTX-API-KEY: {$otxKey}"] : [];
 
         return [
-            'crt.sh' => [
-                'url' => "https://crt.sh/?q=%25.{$domain}&output=json",
+            'threatminer' => [
+                'url'     => "https://api.threatminer.org/v2/domain.php?q={$domain}&rt=5",
                 'headers' => []
             ],
             'certspotter' => [
-                'url' => "https://api.certspotter.com/v1/issuances?domain={$domain}&include_subdomains=true&expand=dns_names",
+                'url'     => "https://api.certspotter.com/v1/issuances?domain={$domain}&include_subdomains=true&expand=dns_names",
                 'headers' => []
             ],
             'hackertarget' => [
-                'url' => "https://api.hackertarget.com/hostsearch/?q={$domain}",
+                'url'     => "https://api.hackertarget.com/hostsearch/?q={$domain}",
                 'headers' => []
             ],
             'alienvault_otx' => [
-                'url' => "https://otx.alienvault.com/api/v1/indicators/domain/{$domain}/passive_dns",
+                'url'     => "https://otx.alienvault.com/api/v1/indicators/domain/{$domain}/passive_dns",
                 'headers' => $otxHeaders
             ],
-            'wayback_archive' => [
-                'url' => "http://web.archive.org/cdx/search/cdx?url=*.{$domain}&output=json&collapse=urlkey",
+            'rapiddns' => [
+                'url'     => "https://rapiddns.io/subdomain/{$domain}",
                 'headers' => []
             ],
             'anubisdb' => [
-                'url' => "https://jldc.me/anubis/subdomains/{$domain}",
+                'url'     => "https://jldc.me/anubis/subdomains/{$domain}",
                 'headers' => []
             ],
-            'rapiddns' => [
-                'url' => "https://rapiddns.io/subdomain/{$domain}",
+            'wayback_archive' => [
+                'url'     => "http://web.archive.org/cdx/search/cdx?url=*.{$domain}&output=json&collapse=urlkey",
                 'headers' => []
             ],
             'urlscan' => [
-                'url' => "https://urlscan.io/api/v1/search/?q=domain:{$domain}",
+                'url'     => "https://urlscan.io/api/v1/search/?q=domain:{$domain}",
                 'headers' => []
             ]
         ];
+    }
+
+    /**
+     * 搜索引擎被动嗅探 (Bing Web Crawler)
+     */
+    private function crawlSearchEngines(string $domain, ?array $proxy): array
+    {
+        $subs = [];
+        $bingUrl = "https://www.bing.com/search?q=" . urlencode("domain:{$domain} -www.{$domain}");
+
+        $ch = curl_init($bingUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+        if ($proxy) {
+            $this->applyProxy($ch, $proxy);
+        }
+        $html = curl_exec($ch);
+        curl_close($ch);
+
+        if ($html) {
+            $pattern = '/https?:\/\/([a-zA-Z0-9_\-\.]+\.' . preg_quote($domain, '/') . ')/i';
+            if (preg_match_all($pattern, $html, $m)) {
+                $subs = array_merge($subs, $m[1]);
+            }
+        }
+
+        return $this->normalizeSubdomains($subs, $domain);
+    }
+
+    /**
+     * 从主域名的 DNS 权威记录中提取子域名 (NS/MX/TXT/SPF 内部主机关联)
+     */
+    private function extractDnsZoneHostnames(string $domain): array
+    {
+        $candidates = [];
+        try {
+            $mxRecords = @dns_get_record($domain, DNS_MX);
+            if (is_array($mxRecords)) {
+                foreach ($mxRecords as $mx) {
+                    if (!empty($mx['target']) && str_ends_with(strtolower($mx['target']), '.' . $domain)) {
+                        $candidates[] = $mx['target'];
+                    }
+                }
+            }
+
+            $txtRecords = @dns_get_record($domain, DNS_TXT);
+            if (is_array($txtRecords)) {
+                foreach ($txtRecords as $txt) {
+                    $txtVal = $txt['txt'] ?? '';
+                    if (preg_match_all('/([a-zA-Z0-9_\-\.]+\.' . preg_quote($domain, '/') . ')/i', $txtVal, $m)) {
+                        $candidates = array_merge($candidates, $m[1]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
+
+        return $this->normalizeSubdomains($candidates, $domain);
     }
 
     /**
@@ -147,14 +253,11 @@ class PassiveCollectorPool
 
         try {
             switch ($sourceName) {
-                case 'crt.sh':
+                case 'threatminer':
                     $json = json_decode($content, true);
-                    if (is_array($json)) {
-                        foreach ($json as $row) {
-                            $nv = $row['name_value'] ?? '';
-                            foreach (explode("\n", $nv) as $line) {
-                                $extracted[] = $line;
-                            }
+                    if (!empty($json['results']) && is_array($json['results'])) {
+                        foreach ($json['results'] as $sub) {
+                            $extracted[] = $sub;
                         }
                     }
                     break;
@@ -192,15 +295,9 @@ class PassiveCollectorPool
                     }
                     break;
 
-                case 'wayback_archive':
-                    $json = json_decode($content, true);
-                    if (is_array($json)) {
-                        foreach ($json as $idx => $row) {
-                            if ($idx === 0) continue; // 第一行为头部说明
-                            $url = $row[2] ?? '';
-                            $host = parse_url($url, PHP_URL_HOST);
-                            if ($host) $extracted[] = $host;
-                        }
+                case 'rapiddns':
+                    if (preg_match_all('/<td>([a-zA-Z0-9.-]+\.' . preg_quote($mainDomain, '/') . ')<\/td>/i', $content, $m)) {
+                        $extracted = array_merge($extracted, $m[1]);
                     }
                     break;
 
@@ -213,10 +310,15 @@ class PassiveCollectorPool
                     }
                     break;
 
-                case 'rapiddns':
-                    // 正则提取 HTML 表格内子域名
-                    if (preg_match_all('/<td>([a-zA-Z0-9.-]+\.' . preg_quote($mainDomain, '/') . ')<\/td>/i', $content, $m)) {
-                        $extracted = array_merge($extracted, $m[1]);
+                case 'wayback_archive':
+                    $json = json_decode($content, true);
+                    if (is_array($json)) {
+                        foreach ($json as $idx => $row) {
+                            if ($idx === 0) continue;
+                            $url = $row[2] ?? '';
+                            $host = parse_url($url, PHP_URL_HOST);
+                            if ($host) $extracted[] = $host;
+                        }
                     }
                     break;
 
@@ -230,15 +332,13 @@ class PassiveCollectorPool
                     }
                     break;
             }
-        } catch (\Throwable $e) {
-            // 单源解析异常静默捕获
-        }
+        } catch (\Throwable $e) {}
 
         return $this->normalizeSubdomains($extracted, $mainDomain);
     }
 
     /**
-     * TLS SAN 兜底提取：对主域名发起 TLS 连接读取证书 SAN 扩展
+     * TLS SAN 兜底提取
      */
     private function extractTlsSan(string $mainDomain, ?array $proxy): array
     {
@@ -267,7 +367,6 @@ class PassiveCollectorPool
                 if ($cert) {
                     $certData = openssl_x509_parse($cert);
                     $sanStr = $certData['extensions']['subjectAltName'] ?? '';
-                    // 格式: DNS:example.com, DNS:*.example.com, DNS:api.example.com
                     foreach (explode(',', $sanStr) as $part) {
                         $part = trim($part);
                         if (str_starts_with($part, 'DNS:')) {
@@ -277,16 +376,11 @@ class PassiveCollectorPool
                 }
                 fclose($client);
             }
-        } catch (\Throwable $e) {
-            // 静默降级
-        }
+        } catch (\Throwable $e) {}
 
         return $this->normalizeSubdomains($sanList, $mainDomain);
     }
 
-    /**
-     * 统一归一化去重规则：小写、去尾部点、剔除通配符 *.、剔除非本主域
-     */
     public function normalizeSubdomains(array $rawList, string $mainDomain): array
     {
         $clean = [];
@@ -294,25 +388,35 @@ class PassiveCollectorPool
 
         foreach ($rawList as $item) {
             $sub = strtolower(trim($item));
-            $sub = ltrim($sub, '*.');
+            // 剥离通配符前缀
+            if (str_starts_with($sub, '*.')) {
+                $sub = substr($sub, 2);
+            }
             $sub = rtrim($sub, '.');
 
             if ($sub === '' || $sub === $mainDomain) {
                 continue;
             }
 
-            // 必须以主域结尾
             if (!str_ends_with($sub, '.' . $mainDomain)) {
                 continue;
             }
 
-            // 合法 FQDN 格式
             if (filter_var($sub, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
                 $clean[] = $sub;
             }
         }
 
         return array_values(array_unique($clean));
+    }
+
+    private function appendResult(array &$pool, string $sub, string $source): void
+    {
+        if (!isset($pool[$sub])) {
+            $pool[$sub] = ['sources' => [$source]];
+        } elseif (!in_array($source, $pool[$sub]['sources'], true)) {
+            $pool[$sub]['sources'][] = $source;
+        }
     }
 
     private function getSetting(string $key, string $default = ''): string
@@ -328,18 +432,19 @@ class PassiveCollectorPool
     private function applyProxy($ch, array $proxy): void
     {
         $proto = strtolower($proxy['protocol'] ?? 'http');
-        $proxyType = match ($proto) {
-            'https'   => CURLPROXY_HTTPS,
-            'socks5'  => CURLPROXY_SOCKS5,
-            'socks5h' => CURLPROXY_SOCKS5_HOSTNAME,
-            default   => CURLPROXY_HTTP
-        };
-        curl_setopt($ch, CURLOPT_PROXYTYPE, $proxyType);
-        curl_setopt($ch, CURLOPT_PROXY, "{$proxy['host']}:{$proxy['port']}");
+        $host = $proxy['host'];
+        $port = (int)$proxy['port'];
 
-        if (!empty($proxy['auth_user'])) {
-            $pass = !empty($proxy['auth_pass_encrypted']) ? Crypto::decrypt($proxy['auth_pass_encrypted']) : '';
-            curl_setopt($ch, CURLOPT_PROXYUSERPWD, "{$proxy['auth_user']}:{$pass}");
+        $proxyType = CURLPROXY_HTTP;
+        if ($proto === 'https') {
+            $proxyType = CURLPROXY_HTTPS;
+        } elseif ($proto === 'socks5') {
+            $proxyType = CURLPROXY_SOCKS5;
+        } elseif ($proto === 'socks5h') {
+            $proxyType = CURLPROXY_SOCKS5_HOSTNAME;
         }
+
+        curl_setopt($ch, CURLOPT_PROXYTYPE, $proxyType);
+        curl_setopt($ch, CURLOPT_PROXY, "{$host}:{$port}");
     }
 }
