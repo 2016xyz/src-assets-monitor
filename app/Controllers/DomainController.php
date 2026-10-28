@@ -6,6 +6,7 @@ use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
 use App\Middleware\AuthMiddleware;
+use App\Middleware\SanitizeInputMiddleware;
 use App\Services\Proxy\CircuitBreaker;
 use App\Services\Proxy\DoHProxyClient;
 use App\Services\Proxy\ProxyRateLimiter;
@@ -82,11 +83,15 @@ class DomainController
             Response::error('该域名资产已存在，请勿重复添加', 422);
         }
 
+        // XSS 输入净化
+        $safeGroup = SanitizeInputMiddleware::escapeHtml(trim($b['group_name'] ?? '默认分组'));
+        $safeRemark = SanitizeInputMiddleware::escapeHtml(trim($b['remark'] ?? ''));
+
         $id = Database::insert('domains', [
             'user_id'                => AuthMiddleware::id(),
             'domain'                 => strtolower($domain),
-            'group_name'             => $b['group_name'] ?? '默认分组',
-            'remark'                 => $b['remark'] ?? '',
+            'group_name'             => $safeGroup,
+            'remark'                 => $safeRemark,
             'is_enabled'             => isset($b['is_enabled']) ? (int)$b['is_enabled'] : 1,
             'check_interval'         => $b['check_interval'] ?? '1h',
             'proxy_mode'             => $b['proxy_mode'] ?? 'auto',
@@ -108,8 +113,12 @@ class DomainController
 
         $b = $request->input();
         $data = [];
-        if (isset($b['group_name'])) $data['group_name'] = $b['group_name'];
-        if (isset($b['remark'])) $data['remark'] = $b['remark'];
+        if (isset($b['group_name'])) {
+            $data['group_name'] = SanitizeInputMiddleware::escapeHtml(trim($b['group_name']));
+        }
+        if (isset($b['remark'])) {
+            $data['remark'] = SanitizeInputMiddleware::escapeHtml(trim($b['remark']));
+        }
         if (isset($b['is_enabled'])) $data['is_enabled'] = (int)$b['is_enabled'];
         if (isset($b['check_interval'])) $data['check_interval'] = $b['check_interval'];
         if (isset($b['proxy_mode'])) $data['proxy_mode'] = $b['proxy_mode'];
@@ -127,7 +136,6 @@ class DomainController
     public function destroy(Request $request, $id): void
     {
         $id = (int)$id;
-        // 彻底级联删除所有关联业务表，无孤儿数据残留
         Database::delete('domains', 'id = ?', [$id]);
         Database::delete('subdomains', 'domain_id = ?', [$id]);
         Database::delete('dns_snapshots', 'domain_id = ?', [$id]);
@@ -214,14 +222,18 @@ class DomainController
         ]);
     }
 
+    /**
+     * 安全导出 CSV 报告 (含 CSV Formula / 命令注入防御)
+     */
     public function exportCsv(Request $request): void
     {
         $domainId = (int)$request->query('domain_id');
         $domain = Database::fetchOne("SELECT domain FROM domains WHERE id = ?", [$domainId]);
-        $domainName = $domain ? $domain['domain'] : 'export';
+        $domainName = $domain ? preg_replace('/[^a-zA-Z0-9.-]/', '_', $domain['domain']) : 'export';
 
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="subdomains_' . $domainName . '_' . date('Ymd_His') . '.csv"');
+        header('X-Content-Type-Options: nosniff');
 
         echo chr(0xEF) . chr(0xBB) . chr(0xBF);
         $fp = fopen('php://output', 'w');
@@ -231,18 +243,33 @@ class DomainController
         foreach ($subs as $s) {
             fputcsv($fp, [
                 $s['id'],
-                $s['asset_name'],
-                $s['alias_name'] ?? '',
-                $s['asset_name_source'],
-                $s['subdomain'],
-                $s['record_type'],
-                $s['record_value'],
-                !empty($s['takeover_risk']) ? ('危险: ' . ($s['takeover_reason'] ?? '接管风险')) : '正常',
-                $s['provenance_sources'] ?? $s['source'],
+                $this->sanitizeCsvCell($s['asset_name']),
+                $this->sanitizeCsvCell($s['alias_name'] ?? ''),
+                $this->sanitizeCsvCell($s['asset_name_source']),
+                $this->sanitizeCsvCell($s['subdomain']),
+                $this->sanitizeCsvCell($s['record_type']),
+                $this->sanitizeCsvCell($s['record_value']),
+                !empty($s['takeover_risk']) ? $this->sanitizeCsvCell('危险: ' . ($s['takeover_reason'] ?? '接管风险')) : '正常',
+                $this->sanitizeCsvCell($s['provenance_sources'] ?? $s['source']),
                 $s['first_seen_at']
             ]);
         }
         fclose($fp);
         exit;
+    }
+
+    /**
+     * 防范 CSV 公式执行注入 (Excel / Calc Formula Injection)
+     * 若单元格以 =, +, -, @, 制表符开头，前置单引号强制作为纯文本处理
+     */
+    private function sanitizeCsvCell(?string $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        if (preg_match('/^[=+\-@\t\r]/', $value)) {
+            return "'" . $value;
+        }
+        return $value;
     }
 }

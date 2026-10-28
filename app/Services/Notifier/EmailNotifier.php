@@ -32,13 +32,17 @@ class EmailNotifier implements NotifierInterface
             $this->sendCommand($socket, "RCPT TO: <{$to}>");
             $this->sendCommand($socket, "DATA");
 
+            // 防注入：对邮件标题与内容进行严格 HTML 安全转义 (防邮件客户端 XSS 攻击)
+            $safeTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $safeContent = nl2br(htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+
             $headers = "From: SRC 资产检测站 <{$user}>\r\n" .
                        "To: <{$to}>\r\n" .
                        "Subject: =?UTF-8?B?" . base64_encode($title) . "?=\r\n" .
                        "MIME-Version: 1.0\r\n" .
                        "Content-Type: text/html; charset=UTF-8\r\n\r\n";
 
-            $body = "<div style='font-family:sans-serif;line-height:1.6;'><h3>{$title}</h3><pre style='background:#f1f5f9;padding:12px;'>{$content}</pre></div>\r\n.\r\n";
+            $body = "<div style='font-family:sans-serif;line-height:1.6;color:#1e293b;'><h3>{$safeTitle}</h3><div style='background:#f8fafc;padding:16px;border-left:4px solid #3b82f6;'>{$safeContent}</div></div>\r\n.\r\n";
 
             fputs($socket, $headers . $body);
             $this->readResponse($socket);
@@ -53,7 +57,9 @@ class EmailNotifier implements NotifierInterface
 
     private function sendCommand($socket, string $cmd): string
     {
-        fputs($socket, $cmd . "\r\n");
+        // 防 SMTP CRLF 命令注入：剔除换行符
+        $cleanCmd = str_replace(["\r", "\n"], '', $cmd);
+        fputs($socket, $cleanCmd . "\r\n");
         return $this->readResponse($socket);
     }
 

@@ -9,7 +9,7 @@ use App\Core\Database;
 use App\Middleware\SanitizeInputMiddleware;
 use App\Services\Security\SsrfGuard;
 
-echo "=== 执行「SQL 注入、XSS 跨站、SSRF」深度安全攻击抵御测试 ===\n\n";
+echo "=== 执行「SQL 注入、XSS 跨站、SSRF、CSV 注入」深度安全攻击抵御测试 ===\n\n";
 
 // 初始化临时安全测试表
 Database::query("CREATE TABLE IF NOT EXISTS _sec_test (id INTEGER PRIMARY KEY, username TEXT, password TEXT);");
@@ -47,7 +47,6 @@ $res = Database::fetchOne("SELECT * FROM _sec_test WHERE username = ?", [$mockPa
 assert($res === null, '预编译参数绑定必须有效防范万能密码攻击');
 echo "  -> 通过: SQL 注入全路径防御体系完备，零注入漏洞\n\n";
 
-// 清理测试表
 Database::query("DROP TABLE IF EXISTS _sec_test;");
 
 // ========================================================
@@ -72,9 +71,33 @@ echo "  -> 净化转义后结果: [{$escaped}]\n";
 echo "  -> 通过: 全局 XSS 输入与输出防御生效\n\n";
 
 // ========================================================
-// 3. SSRF 服务端请求伪造防御测试
+// 3. CSV / Excel 公式注入 (Formula Injection) 防御测试
 // ========================================================
-echo "[安全防御 3] SSRF 内网嗅探与云元数据窃取攻击拦截:\n";
+echo "[安全防御 3] CSV 报表导出公式执行注入防御:\n";
+$reflector = new ReflectionClass(\App\Controllers\DomainController::class);
+$sanitizeCsvMethod = $reflector->getMethod('sanitizeCsvCell');
+$sanitizeCsvMethod->setAccessible(true);
+$domainCtrl = new \App\Controllers\DomainController();
+
+$dangerousCsvPayloads = [
+    '=cmd|\'/C calc\'!A0' => "'=cmd|'/C calc'!A0",
+    '+12345'              => "'+12345",
+    '-5+5'                => "'-5+5",
+    '@SUM(A1:A10)'        => "'@SUM(A1:A10)",
+    "\tmalicious"         => "'\tmalicious"
+];
+
+foreach ($dangerousCsvPayloads as $danger => $expectedSafe) {
+    $safeOut = $sanitizeCsvMethod->invoke($domainCtrl, $danger);
+    assert($safeOut === $expectedSafe, "危险公式 [{$danger}] 必须前置单引号中和");
+}
+echo "  -> 成功中和全部 " . count($dangerousCsvPayloads) . " 种 Excel 恶意执行公式载荷\n";
+echo "  -> 通过: CSV 导出公式注入防御生效\n\n";
+
+// ========================================================
+// 4. SSRF 服务端请求伪造防御测试
+// ========================================================
+echo "[安全防御 4] SSRF 内网嗅探与云元数据窃取攻击拦截:\n";
 
 $dangerousUrls = [
     'http://169.254.169.254/latest/meta-data/',      // AWS/阿里云元数据服务
@@ -95,7 +118,6 @@ foreach ($dangerousUrls as $badUrl) {
 }
 echo "  -> 成功拦截全部 " . count($dangerousUrls) . " 种典型 SSRF 渗透探测载荷\n";
 
-// 合法 Webhook 必须放行
 $validWebhook = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test1234';
 assert(SsrfGuard::isSafeUrl($validWebhook) === true, '合法企业微信 Webhook 必须正常放行');
 echo "  -> 合法 Webhook 正常放行\n";

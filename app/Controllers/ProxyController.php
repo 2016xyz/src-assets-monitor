@@ -6,6 +6,7 @@ use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
+use App\Middleware\SanitizeInputMiddleware;
 use App\Services\Proxy\CircuitBreaker;
 use App\Services\Proxy\ProxyHealthChecker;
 
@@ -42,7 +43,7 @@ class ProxyController
         $total = Database::count('proxies', $whereSql, $params);
         $list = Database::fetchAll("SELECT * FROM proxies WHERE {$whereSql} ORDER BY id DESC LIMIT {$pageSize} OFFSET {$offset}", $params);
 
-        // 密码脱敏
+        // 密码强制脱敏掩码
         foreach ($list as &$item) {
             $hasPass = !empty($item['auth_pass_encrypted']);
             unset($item['auth_pass_encrypted']);
@@ -64,14 +65,31 @@ class ProxyController
             Response::error('请补全代理名称、主机与端口', 422);
         }
 
+        $host = trim($b['host']);
+        // 严格安全校验：防 CRLF 与特殊字符注入代理隧道
+        if (!preg_match('/^[a-zA-Z0-9.\-_]+$/', $host)) {
+            Response::error('代理服务器主机地址格式不合法，严禁包含特殊符号或空格换行', 422);
+        }
+
+        $port = (int)$b['port'];
+        if ($port < 1 || $port > 65535) {
+            Response::error('端口号超出合法范围 (1-65535)', 422);
+        }
+
+        $proto = strtolower($b['protocol'] ?? 'http');
+        if (!in_array($proto, ['http', 'https', 'socks5', 'socks5h'], true)) {
+            Response::error('协议类型不支持', 422);
+        }
+
+        $safeName = SanitizeInputMiddleware::escapeHtml(trim($b['name']));
         $encPass = !empty($b['auth_pass']) ? Crypto::encrypt($b['auth_pass']) : null;
 
         $id = Database::insert('proxies', [
-            'name'                  => $b['name'],
-            'protocol'              => $b['protocol'] ?? 'http',
-            'host'                  => trim($b['host']),
-            'port'                  => (int)$b['port'],
-            'auth_user'             => $b['auth_user'] ?? null,
+            'name'                  => $safeName,
+            'protocol'              => $proto,
+            'host'                  => $host,
+            'port'                  => $port,
+            'auth_user'             => !empty($b['auth_user']) ? trim($b['auth_user']) : null,
             'auth_pass_encrypted'   => $encPass,
             'priority'              => (int)($b['priority'] ?? 10),
             'max_concurrency'       => (int)($b['max_concurrency'] ?? 5),
@@ -92,11 +110,28 @@ class ProxyController
 
         $b = $request->input();
         $data = [];
-        if (isset($b['name'])) $data['name'] = $b['name'];
-        if (isset($b['protocol'])) $data['protocol'] = $b['protocol'];
-        if (isset($b['host'])) $data['host'] = $b['host'];
-        if (isset($b['port'])) $data['port'] = (int)$b['port'];
-        if (isset($b['auth_user'])) $data['auth_user'] = $b['auth_user'];
+        if (isset($b['name'])) {
+            $data['name'] = SanitizeInputMiddleware::escapeHtml(trim($b['name']));
+        }
+        if (isset($b['protocol'])) {
+            $proto = strtolower($b['protocol']);
+            if (in_array($proto, ['http', 'https', 'socks5', 'socks5h'], true)) {
+                $data['protocol'] = $proto;
+            }
+        }
+        if (isset($b['host'])) {
+            $host = trim($b['host']);
+            if (!preg_match('/^[a-zA-Z0-9.\-_]+$/', $host)) {
+                Response::error('主机地址格式非法', 422);
+            }
+            $data['host'] = $host;
+        }
+        if (isset($b['port'])) {
+            $data['port'] = max(1, min(65535, (int)$b['port']));
+        }
+        if (isset($b['auth_user'])) {
+            $data['auth_user'] = trim($b['auth_user']);
+        }
         if (!empty($b['auth_pass'])) {
             $data['auth_pass_encrypted'] = Crypto::encrypt($b['auth_pass']);
         }
@@ -127,10 +162,16 @@ class ProxyController
 
             $parts = explode(':', $line);
             if (count($parts) >= 2) {
-                $host = $parts[0];
+                $host = trim($parts[0]);
                 $port = (int)$parts[1];
-                $user = $parts[2] ?? null;
-                $pass = $parts[3] ?? null;
+
+                // 校验格式
+                if (!preg_match('/^[a-zA-Z0-9.\-_]+$/', $host) || $port < 1 || $port > 65535) {
+                    continue; // 跳过畸形行
+                }
+
+                $user = !empty($parts[2]) ? trim($parts[2]) : null;
+                $pass = !empty($parts[3]) ? trim($parts[3]) : null;
 
                 Database::insert('proxies', [
                     'name'                => "Node-{$host}:{$port}",
