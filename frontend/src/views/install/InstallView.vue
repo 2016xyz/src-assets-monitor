@@ -72,29 +72,29 @@
           </div>
         </div>
 
-        <!-- 步骤 2: 数据库设置 -->
+        <!-- 步骤 2: 数据库设置 (地址、端口、数据库名、连接账号、密码全部独立输入) -->
         <div v-if="currentStep === 2" class="step-pane">
-          <h3 class="pane-title">MySQL / SQLite 数据库设置</h3>
+          <h3 class="pane-title">MySQL 数据库设置</h3>
           <div class="form-grid">
             <div class="form-group">
-              <label>主机地址</label>
+              <label>数据库服务器地址 (Host)</label>
               <input v-model="dbForm.host" placeholder="127.0.0.1" class="input-theme" />
             </div>
             <div class="form-group">
-              <label>端口</label>
+              <label>端口 (Port)</label>
               <input v-model.number="dbForm.port" type="number" placeholder="3306" class="input-theme" />
             </div>
             <div class="form-group col-span-2">
-              <label>数据库名</label>
+              <label>数据库名称 (Database Name)</label>
               <input v-model="dbForm.database" placeholder="src_monitor" class="input-theme" />
             </div>
             <div class="form-group">
-              <label>用户名</label>
+              <label>数据库连接账号 (Username)</label>
               <input v-model="dbForm.username" placeholder="root" class="input-theme" />
             </div>
             <div class="form-group">
-              <label>密码</label>
-              <input v-model="dbForm.password" type="password" placeholder="••••••••" class="input-theme" />
+              <label>数据库连接密码 (Password)</label>
+              <input v-model="dbForm.password" type="password" placeholder="请输入数据库连接密码" class="input-theme" />
             </div>
             <div class="form-group col-span-2 checkbox-group">
               <label class="checkbox-label">
@@ -102,7 +102,7 @@
                 <span>若数据库不存在则自动创建</span>
               </label>
               <button class="ghost-btn-sm" :disabled="testingDb" @click="handleTestDb">
-                {{ testingDb ? '测试中...' : '测试数据库连接' }}
+                {{ testingDb ? '连通性测试中...' : '测试数据库连接' }}
               </button>
             </div>
           </div>

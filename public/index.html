@@ -21,7 +21,7 @@
       --border: rgba(59, 130, 246, 0.10);
       --border-strong: rgba(59, 130, 246, 0.18);
       --border-glass: rgba(255, 255, 255, 0.60);
-      --r-md: 12px; --r-lg: 16px; --r-xl: 24px;
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px;
       --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 2px 8px rgba(59,130,246,0.06);
       --shadow-md: 0 4px 16px rgba(59,130,246,0.08);
       --shadow-lg: 0 12px 40px rgba(59,130,246,0.14);
@@ -76,13 +76,30 @@
     .soft-tag.pass { background: #ECFDF5; color: #10B981; }
     .soft-tag.fail { background: #FEF2F2; color: #EF4444; }
     .soft-tag.warn { background: #FFFBEB; color: #F59E0B; }
-    .form-item { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+
+    /* 表单栅格与独立字段排布 */
+    .form-grid-2col {
+      display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px;
+    }
+    .form-grid-split {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;
+    }
+    .form-item { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
     .form-item label { font-size: 13px; font-weight: 500; color: var(--text-2); }
     .input-theme {
-      padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-strong);
-      background: rgba(255,255,255,0.9); outline: none; font-size: 14px;
+      width: 100%; box-sizing: border-box;
+      padding: 10px 14px; border-radius: var(--r-sm); border: 1px solid var(--border-strong);
+      background: rgba(255,255,255,0.9); outline: none; font-size: 14px; color: var(--text-1);
+      transition: all 0.25s ease;
     }
     .input-theme:focus { border-color: var(--brand-500); box-shadow: var(--shadow-glow); }
+    
+    .db-tools-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--border);
+    }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-2); }
+
     .footer-bar {
       display: flex; justify-content: space-between; margin-top: 32px; padding-top: 20px;
       border-top: 1px solid var(--border);
@@ -90,11 +107,21 @@
     .primary-btn {
       background: var(--grad-brand); color: #fff; border: none; padding: 10px 24px;
       border-radius: var(--r-md); font-size: 13px; font-weight: 500; cursor: pointer;
+      box-shadow: var(--shadow-sm); transition: all 0.25s ease;
     }
+    .primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .ghost-btn {
       background: transparent; border: 1px solid var(--border-strong); padding: 9px 20px;
-      border-radius: var(--r-md); font-size: 13px; cursor: pointer;
+      border-radius: var(--r-md); font-size: 13px; cursor: pointer; color: var(--text-2);
     }
+    .ghost-btn-sm {
+      background: #fff; border: 1px solid var(--brand-300); padding: 7px 14px;
+      border-radius: var(--r-sm); font-size: 12px; cursor: pointer; color: var(--brand-600);
+      font-weight: 500; transition: all 0.2s;
+    }
+    .ghost-btn-sm:hover:not(:disabled) { background: var(--brand-50); }
+    .ghost-btn-sm:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -107,7 +134,7 @@
         <div class="head">
           <div class="logo-sq">⚡</div>
           <h1 class="brand-title">SRC 资产检测站</h1>
-          <p class="brand-sub">系统部署向导与安全配置中心 (v1.1.0 · 含资产名称识别)</p>
+          <p class="brand-sub">系统部署向导与安全配置中心</p>
         </div>
 
         <div class="steps-row">
@@ -127,21 +154,53 @@
             <span>{{ ext.name }} - {{ ext.description }}</span>
             <span class="soft-tag" :class="ext.status">{{ ext.status === 'pass' ? '通过' : (ext.status === 'warn' ? 'SQLite兼容' : '缺失') }}</span>
           </div>
+          <div v-for="perm in envData.permissions" :key="perm.path" class="env-item">
+            <span>{{ perm.path }}</span>
+            <span class="soft-tag" :class="perm.status">{{ perm.status === 'pass' ? '可写' : '只读' }}</span>
+          </div>
         </div>
 
-        <!-- 步骤 2: 数据库设置 -->
+        <!-- 步骤 2: 数据库设置 (地址、端口、数据库名、连接账号、密码全部独立输入) -->
         <div v-if="currentStep === 2">
-          <div class="form-item">
-            <label>数据库主机与端口</label>
-            <input v-model="dbForm.host" class="input-theme" placeholder="127.0.0.1">
+          <!-- 1. 地址与端口单独输入 -->
+          <div class="form-grid-2col">
+            <div class="form-item">
+              <label>数据库服务器地址 (Host)</label>
+              <input v-model="dbForm.host" class="input-theme" placeholder="127.0.0.1">
+            </div>
+            <div class="form-item">
+              <label>端口 (Port)</label>
+              <input v-model.number="dbForm.port" type="number" class="input-theme" placeholder="3306">
+            </div>
           </div>
+
+          <!-- 2. 数据库名单独输入 -->
           <div class="form-item">
-            <label>数据库名</label>
+            <label>数据库名称 (Database Name)</label>
             <input v-model="dbForm.database" class="input-theme" placeholder="src_monitor">
           </div>
-          <div class="form-item">
-            <label>用户名 / 密码</label>
-            <input v-model="dbForm.username" class="input-theme" placeholder="root">
+
+          <!-- 3. 连接账号与连接密码分别单独输入 -->
+          <div class="form-grid-split">
+            <div class="form-item">
+              <label>数据库连接账号 (Username)</label>
+              <input v-model="dbForm.username" class="input-theme" placeholder="root">
+            </div>
+            <div class="form-item">
+              <label>数据库连接密码 (Password)</label>
+              <input v-model="dbForm.password" type="password" class="input-theme" placeholder="请输入数据库密码">
+            </div>
+          </div>
+
+          <!-- 连通性测试按钮与选项 -->
+          <div class="db-tools-row">
+            <label class="checkbox-label">
+              <input v-model="dbForm.auto_create" type="checkbox">
+              <span>若数据库不存在则自动创建</span>
+            </label>
+            <button class="ghost-btn-sm" :disabled="testingDb" @click="handleTestDb">
+              {{ testingDb ? '连通性测试中...' : '测试数据库连接' }}
+            </button>
           </div>
         </div>
 
@@ -153,26 +212,41 @@
           </div>
           <div class="form-item">
             <label>管理员通知邮箱</label>
-            <input v-model="adminForm.email" class="input-theme" placeholder="admin@target.com">
+            <input v-model="adminForm.email" class="input-theme" placeholder="admin@2016xlx.cn">
           </div>
-          <div class="form-item">
-            <label>登录密码 (需含大小写与数字)</label>
-            <input v-model="adminForm.password" type="password" class="input-theme" placeholder="••••••••">
+          <div class="form-grid-split">
+            <div class="form-item">
+              <label>登录密码 (需含大小写与数字)</label>
+              <input v-model="adminForm.password" type="password" class="input-theme" placeholder="••••••••">
+            </div>
+            <div class="form-item">
+              <label>确认新密码</label>
+              <input v-model="adminForm.password_confirmation" type="password" class="input-theme" placeholder="••••••••">
+            </div>
           </div>
         </div>
 
-        <!-- 步骤 4: 完成 -->
-        <div v-if="currentStep === 4" style="text-align: center; padding: 20px 0;">
+        <!-- 步骤 4: 告警通道 -->
+        <div v-if="currentStep === 4">
+          <div class="form-item">
+            <label>企业微信机器人 Webhook (可选)</label>
+            <input v-model="wecomWebhook" class="input-theme" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+          </div>
+          <p style="font-size: 12px; color: var(--text-3); margin: 6px 0 0 0;">提示：可稍后在系统设置中配置邮件 SMTP、钉钉、飞书等更多渠道。</p>
+        </div>
+
+        <!-- 步骤 5: 完成部署 -->
+        <div v-if="currentStep === 5" style="text-align: center; padding: 20px 0;">
           <div style="font-size: 48px; color: var(--success); margin-bottom: 12px;">✓</div>
           <h3>系统安装部署就绪</h3>
-          <p style="font-size: 13px; color: var(--text-2);">数据库架构与管理员账号已生成，资产名称识别模块已装载，向导已永久加锁。</p>
+          <p style="font-size: 13px; color: var(--text-2);">数据库架构与特权账号已建立，安装入口已被永久加锁。</p>
         </div>
 
         <div class="footer-bar">
-          <button v-if="currentStep > 1 && currentStep < 4" class="ghost-btn" @click="currentStep--">上一步</button>
+          <button v-if="currentStep > 1 && currentStep < 5" class="ghost-btn" @click="currentStep--">上一步</button>
           <div style="flex:1;"></div>
           <button class="primary-btn" :disabled="loading" @click="handleNext">
-            {{ currentStep === 4 ? '刷新进入控制台' : '下一步' }}
+            {{ currentStep === 5 ? '进入控制台' : (currentStep === 4 ? '执行系统安装' : '下一步') }}
           </button>
         </div>
       </div>
@@ -188,15 +262,37 @@
       setup() {
         const currentStep = ref(1);
         const loading = ref(false);
+        const testingDb = ref(false);
         const installToken = ref('');
-        const steps = ['环境检测', '数据库', '管理员', '完成部署'];
-        const envData = ref({ extensions: [] });
-        const dbForm = ref({ host: '127.0.0.1', port: 3306, database: 'src_monitor', username: 'root', password: '' });
-        const adminForm = ref({ username: 'admin', email: 'sec@target.com', password: 'Password123', password_confirmation: 'Password123' });
+        const steps = ['环境检测', '数据库设置', '管理员账号', '告警通道', '完成部署'];
+        const envData = ref({ extensions: [], permissions: [] });
+
+        // 数据库独立输入表单
+        const dbForm = ref({
+          host: '127.0.0.1',
+          port: 3306,
+          database: 'src_monitor',
+          username: 'root',
+          password: '',
+          auto_create: true
+        });
+
+        const adminForm = ref({
+          username: 'admin',
+          email: 'admin@2016xlx.cn',
+          password: '',
+          password_confirmation: ''
+        });
+
+        const wecomWebhook = ref('');
 
         onMounted(async () => {
           try {
             const { data } = await axios.get('/api/v1/install/status');
+            if (data.data?.installed) {
+              window.location.href = '/login';
+              return;
+            }
             installToken.value = data.data.install_token;
             const envRes = await axios.post('/api/v1/install/check-env', {}, {
               headers: { 'X-Install-Token': installToken.value }
@@ -205,29 +301,80 @@
           } catch(e) {}
         });
 
+        const handleTestDb = async () => {
+          testingDb.value = true;
+          try {
+            const { data } = await axios.post('/api/v1/install/test-db', dbForm.value, {
+              headers: { 'X-Install-Token': installToken.value }
+            });
+            ElementPlus.ElMessage.success(data.msg || '数据库网络连接成功');
+          } catch(err) {
+            ElementPlus.ElMessage.error(err.response?.data?.msg || '数据库连接失败，请检查账号密码');
+          } finally {
+            testingDb.value = false;
+          }
+        };
+
         const handleNext = async () => {
           loading.value = true;
           try {
             if (currentStep.value === 1) {
               currentStep.value = 2;
             } else if (currentStep.value === 2) {
-              await axios.post('/api/v1/install/database', dbForm.value, { headers: { 'X-Install-Token': installToken.value } });
+              await axios.post('/api/v1/install/database', dbForm.value, {
+                headers: { 'X-Install-Token': installToken.value }
+              });
               currentStep.value = 3;
             } else if (currentStep.value === 3) {
-              await axios.post('/api/v1/install/admin', adminForm.value, { headers: { 'X-Install-Token': installToken.value } });
-              await axios.post('/api/v1/install/complete', {}, { headers: { 'X-Install-Token': installToken.value } });
+              if (!adminForm.value.username || !adminForm.value.password || !adminForm.value.email) {
+                ElementPlus.ElMessage.warning('请填写管理员完整信息');
+                loading.value = false;
+                return;
+              }
+              await axios.post('/api/v1/install/admin', adminForm.value, {
+                headers: { 'X-Install-Token': installToken.value }
+              });
               currentStep.value = 4;
             } else if (currentStep.value === 4) {
+              const channels = [];
+              if (wecomWebhook.value.trim()) {
+                channels.push({
+                  name: '企业微信群机器人',
+                  type: 'wecom',
+                  config: { webhook_url: wecomWebhook.value.trim() }
+                });
+              }
+              if (channels.length > 0) {
+                await axios.post('/api/v1/install/notify', { channels }, {
+                  headers: { 'X-Install-Token': installToken.value }
+                });
+              }
+              await axios.post('/api/v1/install/complete', {}, {
+                headers: { 'X-Install-Token': installToken.value }
+              });
+              currentStep.value = 5;
+            } else if (currentStep.value === 5) {
               window.location.reload();
             }
           } catch(e) {
-            alert(e.response?.data?.msg || '操作异常');
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '操作异常，请检查输入');
           } finally {
             loading.value = false;
           }
         };
 
-        return { currentStep, steps, envData, dbForm, adminForm, handleNext, loading };
+        return {
+          currentStep,
+          steps,
+          envData,
+          dbForm,
+          adminForm,
+          wecomWebhook,
+          handleTestDb,
+          handleNext,
+          loading,
+          testingDb
+        };
       }
     }).use(ElementPlus).mount('#app');
   </script>
