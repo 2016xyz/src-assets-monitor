@@ -36,6 +36,9 @@ jobs:
       - name: Run Deep Logic & Edge Case Audit Tests
         run: php tests/DeepLogicAudit.php
 
+      - name: Run Security Hardening Tests (SQLi, XSS, SSRF)
+        run: php tests/SecurityHardeningTest.php
+
   docker-lint:
     name: Docker Configuration Lint
     runs-on: ubuntu-latest

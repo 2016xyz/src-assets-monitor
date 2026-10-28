@@ -20,6 +20,15 @@ use App\Core\Response;
 use App\Core\Router;
 use App\Middleware\EnsureSystemInstalled;
 
+// ========================================================
+// 企业级 HTTP 安全响应标头注入 (防 XSS、点击劫持、MIME嗅探)
+// ========================================================
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+
 // 跨域响应头设置
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');

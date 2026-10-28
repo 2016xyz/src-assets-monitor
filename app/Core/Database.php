@@ -5,6 +5,7 @@ namespace App\Core;
 use PDO;
 use Exception;
 use PDOException;
+use InvalidArgumentException;
 
 class Database
 {
@@ -50,6 +51,18 @@ class Database
         }
     }
 
+    /**
+     * 严谨验证表名和字段标识符，阻断列名/表名 SQL 注入
+     */
+    public static function validateIdentifier(string $identifier): string
+    {
+        // 仅允许字母、数字和下划线，禁止反引号、空格、分号等任何特殊符号
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $identifier)) {
+            throw new InvalidArgumentException("非法数据库标识符检测到潜在注入攻击: [{$identifier}]");
+        }
+        return $identifier;
+    }
+
     public static function query(string $sql, array $params = []): \PDOStatement
     {
         $stmt = self::getPdo()->prepare($sql);
@@ -72,38 +85,63 @@ class Database
 
     public static function insert(string $table, array $data): int
     {
-        $keys = array_keys($data);
-        $fields = implode('`, `', $keys);
-        $placeholders = implode(', ', array_fill(0, count($keys), '?'));
-        $sql = "INSERT INTO `{$table}` (`{$fields}`) VALUES ({$placeholders})";
-        self::query($sql, array_values($data));
+        $safeTable = self::validateIdentifier($table);
+        if (empty($data)) {
+            throw new InvalidArgumentException("插入操作数据不可为空");
+        }
+
+        $safeKeys = [];
+        $values = [];
+        foreach ($data as $k => $v) {
+            $safeKeys[] = self::validateIdentifier($k);
+            $values[] = $v;
+        }
+
+        $fields = implode('`, `', $safeKeys);
+        $placeholders = implode(', ', array_fill(0, count($safeKeys), '?'));
+        $sql = "INSERT INTO `{$safeTable}` (`{$fields}`) VALUES ({$placeholders})";
+        
+        self::query($sql, $values);
         return (int)self::getPdo()->lastInsertId();
     }
 
     public static function update(string $table, array $data, string $where, array $whereParams = []): int
     {
+        $safeTable = self::validateIdentifier($table);
+        if (empty($data)) {
+            return 0;
+        }
+
         $sets = [];
         $params = [];
         foreach ($data as $col => $val) {
-            $sets[] = "`{$col}` = ?";
+            $safeCol = self::validateIdentifier($col);
+            $sets[] = "`{$safeCol}` = ?";
             $params[] = $val;
         }
+
         $setString = implode(', ', $sets);
-        $sql = "UPDATE `{$table}` SET {$setString} WHERE {$where}";
+        $sql = "UPDATE `{$safeTable}` SET {$setString} WHERE {$where}";
         $stmt = self::query($sql, array_merge($params, $whereParams));
         return $stmt->rowCount();
     }
 
     public static function delete(string $table, string $where, array $whereParams = []): int
     {
-        $sql = "DELETE FROM `{$table}` WHERE {$where}";
+        $safeTable = self::validateIdentifier($table);
+        $sql = "DELETE FROM `{$safeTable}` WHERE {$where}";
         $stmt = self::query($sql, $whereParams);
         return $stmt->rowCount();
     }
 
     public static function count(string $table, string $where = '1=1', array $params = []): int
     {
-        $sql = "SELECT COUNT(*) as cnt FROM `{$table}` WHERE {$where}";
+        // 允许类似于 "domains d" 的简单别名，但禁止复杂注入
+        $parts = explode(' ', trim($table));
+        $safeTable = self::validateIdentifier($parts[0]);
+        $alias = isset($parts[1]) ? ' ' . self::validateIdentifier($parts[1]) : '';
+
+        $sql = "SELECT COUNT(*) as cnt FROM `{$safeTable}`{$alias} WHERE {$where}";
         $res = self::fetchOne($sql, $params);
         return (int)($res['cnt'] ?? 0);
     }
