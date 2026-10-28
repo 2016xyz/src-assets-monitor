@@ -97,7 +97,7 @@ class GitHubDorkScanner
     private function getGitHubToken(): string
     {
         try {
-            $row = Database::fetchOne("SELECT value FROM settings WHERE key = 'github_token'");
+            $row = Database::fetchOne("SELECT value FROM settings WHERE `key` = 'github_token'");
             return trim($row['value'] ?? '');
         } catch (\Throwable $e) {
             return '';

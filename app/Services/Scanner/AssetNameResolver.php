@@ -244,7 +244,7 @@ class AssetNameResolver
     private function isHttpProbeEnabled(): bool
     {
         try {
-            $val = Database::fetchOne("SELECT value FROM settings WHERE key = 'enable_asset_name_http_probe'");
+            $val = Database::fetchOne("SELECT value FROM settings WHERE `key` = 'enable_asset_name_http_probe'");
             return !empty($val) && (string)$val['value'] === '1';
         } catch (\Throwable $e) {
             return true;

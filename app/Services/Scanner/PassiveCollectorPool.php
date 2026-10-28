@@ -318,7 +318,7 @@ class PassiveCollectorPool
     private function getSetting(string $key, string $default = ''): string
     {
         try {
-            $row = Database::fetchOne("SELECT value FROM settings WHERE key = ?", [$key]);
+            $row = Database::fetchOne("SELECT value FROM settings WHERE `key` = ?", [$key]);
             return $row['value'] ?? $default;
         } catch (\Throwable $e) {
             return $default;

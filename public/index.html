@@ -36,7 +36,7 @@
     }
     .tabular-nums { font-variant-numeric: tabular-nums; }
 
-    /* 极光光斑呼吸背景 */
+    /* 极光背景与玻璃拟态 */
     .aurora-wrap {
       position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
       background: var(--grad-bg); padding: 20px; overflow: hidden;
@@ -47,7 +47,6 @@
     .blob-1 { width: 450px; height: 450px; background: #93C5FD; top: -100px; left: -100px; }
     .blob-2 { width: 500px; height: 500px; background: #60A5FA; bottom: -150px; right: -100px; }
 
-    /* 玻璃拟态主卡片 */
     .glass-card {
       position: relative; z-index: 10; width: 100%; max-width: 760px;
       background: var(--grad-glass); backdrop-filter: blur(24px) saturate(160%);
@@ -122,7 +121,7 @@
     }
     .content-area { padding: 24px 28px; max-width: 1400px; width: 100%; box-sizing: border-box; }
 
-    /* 统计卡片与表格 */
+    /* 统计卡片与面板 */
     .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
     .stat-box {
       background: #fff; border: 1px solid var(--border); border-radius: var(--r-md);
@@ -148,6 +147,13 @@
     .action-link.danger { color: var(--danger); }
     .flex-1 { flex: 1; }
     .logout-btn { color: var(--danger); font-size: 13px; cursor: pointer; background: none; border: none; }
+
+    /* 分页与过滤控制栏 */
+    .pagination-bar {
+      display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px;
+      border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2);
+    }
+    .page-nav { display: flex; gap: 8px; align-items: center; }
   </style>
 </head>
 <body>
@@ -177,7 +183,7 @@
           </div>
         </div>
 
-        <!-- 步骤 2: 数据库设置 (独立输入) -->
+        <!-- 步骤 2: 数据库设置 -->
         <div v-if="currentStep === 2">
           <div class="form-grid-2col">
             <div class="form-item">
@@ -307,6 +313,9 @@
           <button class="menu-btn" :class="{ active: currentTab === 'domains' }" @click="currentTab = 'domains'">
             🌐 资产域名管理
           </button>
+          <button class="menu-btn" :class="{ active: currentTab === 'logs' }" @click="currentTab = 'logs'; fetchTaskLogs();">
+            📜 任务与运行日志
+          </button>
           <button class="menu-btn" :class="{ active: currentTab === 'proxies' }" @click="currentTab = 'proxies'">
             🛡️ 网络代理池
           </button>
@@ -419,7 +428,116 @@
             </div>
           </div>
 
-          <!-- Tab 3: 代理池管理 -->
+          <!-- Tab 3: 任务与系统运行日志 (分页显示) -->
+          <div v-if="currentTab === 'logs'">
+            <!-- 巡检任务批次日志 (带分页) -->
+            <div class="card-panel">
+              <div class="panel-head">
+                <div>
+                  <h4 class="panel-title">巡检执行批次历史</h4>
+                  <span style="font-size:12px; color:var(--text-3);">查看所有全网主动爆破与被动采集任务历史状态</span>
+                </div>
+                <div style="display:flex; gap:10px;">
+                  <button class="ghost-btn-sm" @click="fetchTaskLogs">刷新任务</button>
+                </div>
+              </div>
+
+              <el-table :data="taskLogList" v-loading="taskLogLoading" style="width: 100%">
+                <el-table-column prop="id" label="任务ID" width="80" />
+                <el-table-column prop="target_domain" label="目标主域名" min-width="160">
+                  <template #default="{ row }">
+                    <strong>{{ row.target_domain || ('ID:' + row.domain_id) }}</strong>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="trigger_type" label="触发方式" width="100">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.trigger_type === 'auto' ? 'brand' : 'pass'">{{ row.trigger_type === 'auto' ? '自动定时' : '手动下发' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="status" label="任务状态" width="100">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.status === 'success' ? 'pass' : (row.status === 'running' ? 'brand' : 'fail')">
+                      {{ row.status === 'success' ? '成功' : (row.status === 'running' ? '执行中' : '失败') }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="discovered_count" label="发现记录" width="90" />
+                <el-table-column prop="changes_count" label="解析异动" width="90" />
+                <el-table-column label="错误说明 / 耗时" min-width="200">
+                  <template #default="{ row }">
+                    <span v-if="row.error_message" style="color:var(--danger); font-size:12px;">{{ row.error_message }}</span>
+                    <span v-else style="color:var(--text-3); font-size:12px;">正常完成</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="started_at" label="执行时间" width="160" />
+                <el-table-column label="操作" width="120" fixed="right">
+                  <template #default="{ row }">
+                    <button class="action-link" @click="filterStagesByTask(row.id)">查看阶段流水</button>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <!-- 任务日志分页控制栏 -->
+              <div class="pagination-bar">
+                <span>共计 {{ taskLogTotal }} 条任务记录 · 当前第 {{ taskLogPage }} / {{ Math.ceil(taskLogTotal / taskLogPageSize) || 1 }} 页</span>
+                <div class="page-nav">
+                  <button class="ghost-btn-sm" :disabled="taskLogPage <= 1" @click="taskLogPage--; fetchTaskLogs();">上一页</button>
+                  <button class="ghost-btn-sm" :disabled="taskLogPage >= Math.ceil(taskLogTotal / taskLogPageSize)" @click="taskLogPage++; fetchTaskLogs();">下一页</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 详细阶段执行流水 (scan_task_logs 分页显示) -->
+            <div class="card-panel">
+              <div class="panel-head">
+                <div>
+                  <h4 class="panel-title">详细阶段流水跟踪日志 (scan_task_logs)</h4>
+                  <span style="font-size:12px; color:var(--text-3);">被动采集、泛解析清洗、爆破、接管检测、Diff 对比等阶段实时明细</span>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                  <select v-model="stageFilterLevel" class="input-theme" style="width:110px; padding:4px 8px; font-size:12px;" @change="stageLogPage = 1; fetchStageLogs();">
+                    <option value="">全部级别</option>
+                    <option value="info">INFO</option>
+                    <option value="warn">WARN</option>
+                    <option value="error">ERROR</option>
+                  </select>
+                  <button class="ghost-btn-sm" @click="stageLogPage = 1; stageFilterTaskId = null; fetchStageLogs();">全部流水</button>
+                </div>
+              </div>
+
+              <el-table :data="stageLogList" v-loading="stageLogLoading" style="width: 100%">
+                <el-table-column prop="id" label="ID" width="70" />
+                <el-table-column prop="task_id" label="任务ID" width="80" />
+                <el-table-column prop="stage" label="执行阶段" width="140">
+                  <template #default="{ row }">
+                    <span class="soft-tag brand">{{ row.stage }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="level" label="级别" width="80">
+                  <template #default="{ row }">
+                    <span class="soft-tag" :class="row.level === 'info' ? 'pass' : (row.level === 'warn' ? 'warn' : 'fail')">{{ row.level.toUpperCase() }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="message" label="阶段执行明细" min-width="320">
+                  <template #default="{ row }">
+                    <span style="font-size:12.5px; color:var(--text-1);">{{ row.message }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="created_at" label="时间戳" width="160" />
+              </el-table>
+
+              <!-- 流水日志分页控制栏 -->
+              <div class="pagination-bar">
+                <span>共计 {{ stageLogTotal }} 条流水明细 · 当前第 {{ stageLogPage }} / {{ Math.ceil(stageLogTotal / stageLogPageSize) || 1 }} 页</span>
+                <div class="page-nav">
+                  <button class="ghost-btn-sm" :disabled="stageLogPage <= 1" @click="stageLogPage--; fetchStageLogs();">上一页</button>
+                  <button class="ghost-btn-sm" :disabled="stageLogPage >= Math.ceil(stageLogTotal / stageLogPageSize)" @click="stageLogPage++; fetchStageLogs();">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: 代理池管理 -->
           <div v-if="currentTab === 'proxies'">
             <div class="card-panel">
               <div class="panel-head">
@@ -454,7 +572,7 @@
             </div>
           </div>
 
-          <!-- Tab 4: 告警通道 -->
+          <!-- Tab 5: 告警通道 -->
           <div v-if="currentTab === 'channels'">
             <div class="card-panel">
               <div class="panel-head">
@@ -479,7 +597,7 @@
             </div>
           </div>
 
-          <!-- Tab 5: 系统设置 -->
+          <!-- Tab 6: 系统设置 -->
           <div v-if="currentTab === 'settings'">
             <div class="card-panel">
               <h4 class="panel-title" style="margin-bottom:12px;">内置子域名字典维护</h4>
@@ -496,7 +614,7 @@
         </div>
       </main>
 
-      <!-- 新增主域名弹窗 -->
+      <!-- 弹窗组件 -->
       <el-dialog v-model="showAddDomainModal" title="新增主域名监控" width="460px">
         <div class="form-item">
           <label>主域名 (FQDN)</label>
@@ -524,7 +642,6 @@
         </div>
       </el-dialog>
 
-      <!-- 新增代理弹窗 -->
       <el-dialog v-model="showAddProxyModal" title="新增网络代理节点" width="460px">
         <div class="form-item">
           <label>节点名称</label>
@@ -555,7 +672,6 @@
         </div>
       </el-dialog>
 
-      <!-- 新增渠道弹窗 -->
       <el-dialog v-model="showAddChannelModal" title="新建告警推送通道" width="460px">
         <div class="form-item">
           <label>渠道名称</label>
@@ -611,6 +727,21 @@
         const channelList = ref([]);
         const dictionary = ref([]);
         const newWord = ref('');
+
+        // 任务与系统运行日志分页状态
+        const taskLogList = ref([]);
+        const taskLogTotal = ref(0);
+        const taskLogPage = ref(1);
+        const taskLogPageSize = ref(10);
+        const taskLogLoading = ref(false);
+
+        const stageLogList = ref([]);
+        const stageLogTotal = ref(0);
+        const stageLogPage = ref(1);
+        const stageLogPageSize = ref(15);
+        const stageLogLoading = ref(false);
+        const stageFilterLevel = ref('');
+        const stageFilterTaskId = ref(null);
 
         // 弹窗表单
         const showAddDomainModal = ref(false);
@@ -688,7 +819,7 @@
                 channels.push({ name: '企业微信群机器人', type: 'wecom', config: { webhook_url: wecomWebhook.value.trim() } });
               }
               if (channels.length > 0) {
-                await axios.post('/api/v1/install/notify', { channels }, { headers: { 'X-Install-Token': installToken.value } });
+                await axios.post('/api/v1/notify/channels', { channels }, { headers: { 'X-Install-Token': installToken.value } });
               }
               await axios.post('/api/v1/install/complete', {}, { headers: { 'X-Install-Token': installToken.value } });
               currentStep.value = 5;
@@ -743,6 +874,8 @@
           setupAxiosAuth();
           fetchDashboard();
           fetchDomains();
+          fetchTaskLogs();
+          fetchStageLogs();
           fetchProxies();
           fetchChannels();
           fetchSettings();
@@ -766,6 +899,45 @@
           } catch(e) {}
         };
 
+        // 任务日志分页拉取
+        const fetchTaskLogs = async () => {
+          taskLogLoading.value = true;
+          try {
+            const { data } = await axios.get('/api/v1/logs/tasks', {
+              params: { page: taskLogPage.value, page_size: taskLogPageSize.value }
+            });
+            taskLogList.value = data.data.list;
+            taskLogTotal.value = data.data.total;
+          } catch(e) {} finally {
+            taskLogLoading.value = false;
+          }
+        };
+
+        // 阶段流水日志分页拉取
+        const fetchStageLogs = async () => {
+          stageLogLoading.value = true;
+          try {
+            const params = {
+              page: stageLogPage.value,
+              page_size: stageLogPageSize.value,
+              level: stageFilterLevel.value
+            };
+            if (stageFilterTaskId.value) params.task_id = stageFilterTaskId.value;
+            const { data } = await axios.get('/api/v1/logs/stages', { params });
+            stageLogList.value = data.data.list;
+            stageLogTotal.value = data.data.total;
+          } catch(e) {} finally {
+            stageLogLoading.value = false;
+          }
+        };
+
+        const filterStagesByTask = (taskId) => {
+          stageFilterTaskId.value = taskId;
+          stageLogPage.value = 1;
+          fetchStageLogs();
+          ElementPlus.ElMessage.info(`已过滤显示任务 #${taskId} 的阶段执行流水`);
+        };
+
         const submitAddDomain = async () => {
           try {
             await axios.post('/api/v1/domains', addDomainForm.value);
@@ -783,8 +955,10 @@
             ElementPlus.ElMessage.success(`检测完成: 存活 ${data.data.total_active}，变动 ${data.data.changes}`);
             fetchDomains();
             fetchDashboard();
+            fetchTaskLogs();
+            fetchStageLogs();
           } catch(e) {
-            ElementPlus.ElMessage.error('检测失败');
+            ElementPlus.ElMessage.error(e.response?.data?.msg || '检测失败');
           }
         };
 
@@ -907,6 +1081,8 @@
           handleTestDb, handleNextInstall,
           loginForm, captchaSvg, loginLoading, handleLogin, handleLogout, fetchCaptcha,
           currentTab, stats, timelineLogs, domainList, proxyList, channelList, dictionary, newWord,
+          taskLogList, taskLogTotal, taskLogPage, taskLogPageSize, taskLogLoading, fetchTaskLogs,
+          stageLogList, stageLogTotal, stageLogPage, stageLogPageSize, stageLogLoading, stageFilterLevel, stageFilterTaskId, fetchStageLogs, filterStagesByTask,
           fetchDashboard, fetchDomains, handleScanDomain, exportDomainCsv, handleDeleteDomain,
           fetchProxies, handleTestProxy, handleDeleteProxy,
           fetchChannels, handleTestChannel, handleDeleteChannel, handleAddWord,

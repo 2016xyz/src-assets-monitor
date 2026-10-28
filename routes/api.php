@@ -8,6 +8,7 @@ use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\DomainController;
 use App\Controllers\InstallController;
+use App\Controllers\LogController;
 use App\Controllers\NotifyController;
 use App\Controllers\ProxyController;
 use App\Controllers\ProxyGroupController;
@@ -49,9 +50,9 @@ $router->post('/api/v1/domains/{id}/resolve-names', [SubdomainController::class,
 $router->get('/api/v1/subdomains/export',       [DomainController::class, 'exportCsv'], $auth);
 
 // === 5. 子域名资产与名称识别 ===
-$router->get('/api/v1/subdomains',                      [SubdomainController::class, 'index'], $auth);
-$router->put('/api/v1/subdomains/{id}/alias',           [SubdomainController::class, 'updateAlias'], $auth);
-$router->post('/api/v1/subdomains/{id}/resolve-name',   [SubdomainController::class, 'resolveSingleName'], $auth);
+$router->get('/api/v1/subdomains',                    [SubdomainController::class, 'index'], $auth);
+$router->put('/api/v1/subdomains/{id}/alias',         [SubdomainController::class, 'updateAlias'], $auth);
+$router->post('/api/v1/subdomains/{id}/resolve-name', [SubdomainController::class, 'resolveSingleName'], $auth);
 
 // === 6. 出口网络代理池与策略组 ===
 $router->get('/api/v1/proxies',             [ProxyController::class, 'index'], $auth);
@@ -72,7 +73,11 @@ $router->post('/api/v1/notify-channels',         [NotifyController::class, 'stor
 $router->delete('/api/v1/notify-channels/{id}',  [NotifyController::class, 'destroy'], $auth);
 $router->post('/api/v1/notify-channels/{id}/test',[NotifyController::class, 'testChannel'], $auth);
 
-// === 8. 系统全局设置与字典 ===
+// === 8. 巡检任务与系统运行流水日志 (带分页) ===
+$router->get('/api/v1/logs/tasks',  [LogController::class, 'getTasks'], $auth);
+$router->get('/api/v1/logs/stages', [LogController::class, 'getStages'], $auth);
+
+// === 9. 系统全局设置与字典 ===
 $router->get('/api/v1/settings',            [SettingController::class, 'getSettings'], $auth);
 $router->post('/api/v1/settings',           [SettingController::class, 'saveSetting'], $auth);
 $router->get('/api/v1/settings/audit-logs', [SettingController::class, 'auditLogs'], $auth);

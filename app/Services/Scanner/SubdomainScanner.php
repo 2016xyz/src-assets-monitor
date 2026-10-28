@@ -118,7 +118,7 @@ class SubdomainScanner
                     }
                 }
             }
-            usleep(mt_rand(150000, 300000)); // 随机物理微抖动
+            usleep(mt_rand(150000, 300000));
         }
 
         // 7. 阶段六：CNAME 链追踪与云存储桶接管检测
@@ -130,7 +130,6 @@ class SubdomainScanner
         $jsDiscovered = $this->extractFromWebAssets($analyzedRecords, $domain['domain'], $proxy);
         if (!empty($jsDiscovered)) {
             $this->logTask($taskId, 'js_crawl', 'info', "JS 深度挖掘出额外 " . count($jsDiscovered) . " 个潜在内部端点");
-            // 对新挖掘出的资产补探一次 A 记录
             foreach ($jsDiscovered as $jsSub) {
                 $res = $this->dohClient->resolve($jsSub, 'A', $proxy);
                 if (!empty($res['records'])) {
@@ -158,13 +157,10 @@ class SubdomainScanner
         ];
     }
 
-    /**
-     * 字典生成与置换拓展 ({env}.{word}, {word}-{env}, {word}{数字})
-     */
     private function generatePermutationDictionary(string $mainDomain): array
     {
         $baseDict = ['www', 'mail', 'api', 'admin', 'test', 'dev', 'vpn', 'oa', 'git', 'jenkins', 'auth', 'portal'];
-        $row = Database::fetchOne("SELECT value FROM settings WHERE key = 'dictionary_subdomains'");
+        $row = Database::fetchOne("SELECT `value` FROM `settings` WHERE `key` = 'dictionary_subdomains'");
         if ($row && !empty($row['value'])) {
             $parsed = json_decode($row['value'], true);
             if (is_array($parsed)) $baseDict = $parsed;
@@ -173,7 +169,6 @@ class SubdomainScanner
         $environments = ['dev', 'test', 'uat', 'stg', 'prod', 'inner', 'corp'];
         $generated = $baseDict;
 
-        // 置换生成
         foreach (array_slice($baseDict, 0, 15) as $word) {
             foreach ($environments as $env) {
                 $generated[] = "{$word}-{$env}";
@@ -186,9 +181,6 @@ class SubdomainScanner
         return array_values(array_unique($generated));
     }
 
-    /**
-     * CNAME 链与云存储桶接管检测
-     */
     private function enrichCnameAndTakeover(array $records, ?array $proxy): array
     {
         foreach ($records as &$rec) {
@@ -204,7 +196,6 @@ class SubdomainScanner
                     $rec['takeover_risk'] = 1;
                     $rec['takeover_reason'] = $trace['reason'];
                 } else {
-                    // 只读检测云存储桶是否存在
                     $bucketCheck = $this->bucketDetector->checkBucketStatus($rec['value'], $proxy);
                     if ($bucketCheck['is_dangling_bucket']) {
                         $rec['takeover_risk'] = 1;
@@ -216,16 +207,13 @@ class SubdomainScanner
         return $records;
     }
 
-    /**
-     * 从 Web 资产提取 JavaScript 与 Source Map
-     */
     private function extractFromWebAssets(array $records, string $mainDomain, ?array $proxy): array
     {
         $discovered = [];
         $tested = 0;
 
         foreach ($records as $r) {
-            if ($tested >= 3) break; // 控制成本，只探前 3 个存活 Web
+            if ($tested >= 3) break;
             if ($r['record_type'] === 'A') {
                 $url = "https://{$r['subdomain']}/";
                 $subs = $this->jsExtractor->extractFromWeb($url, $mainDomain, $proxy);
@@ -236,11 +224,17 @@ class SubdomainScanner
         return array_values(array_unique($discovered));
     }
 
-    /**
-     * 扩展快照比对与名称识别 (记录来源 provenance、优先级与接管标志)
-     */
     private function diffAndPersistExtended(array $domain, int $taskId, array $records, ?array $proxy): array
     {
+        // 关键加固 1: 本次候选集先按 subdomain + record_type 进行唯一键合并，杜绝批次内重复
+        $dedupRecords = [];
+        foreach ($records as $r) {
+            $dedupKey = "{$r['subdomain']}:{$r['record_type']}";
+            $dedupRecords[$dedupKey] = $r;
+        }
+        $records = array_values($dedupRecords);
+
+        // 关键加固 2: 载入已有的存活映射
         $existing = Database::fetchAll("SELECT * FROM subdomains WHERE domain_id = ?", [$domain['id']]);
         $existingMap = [];
         foreach ($existing as $ex) {
@@ -256,11 +250,9 @@ class SubdomainScanner
             $sourcesJson = json_encode($r['sources'] ?? ['unknown'], JSON_UNESCAPED_UNICODE);
             $primarySource = ($r['sources'][0] ?? 'unknown');
 
-            // 计算通知优先级
             $priority = $this->calculatePriority($primarySource, !empty($r['takeover_risk']));
 
             if (!isset($existingMap[$key])) {
-                // 🆕 全新子域名资产
                 $nameInfo = $this->nameResolver->resolve(
                     $r['subdomain'],
                     $domain['domain'],
@@ -283,7 +275,7 @@ class SubdomainScanner
                     'new_value'         => $r['value']
                 ];
 
-                Database::insert('subdomains', [
+                $newSubId = Database::insert('subdomains', [
                     'domain_id'             => $domain['id'],
                     'subdomain'             => $r['subdomain'],
                     'asset_name'            => $nameInfo['asset_name'],
@@ -302,10 +294,17 @@ class SubdomainScanner
                     'last_seen_at'          => date('Y-m-d H:i:s'),
                     'created_at'            => date('Y-m-d H:i:s')
                 ]);
+
+                // 关键加固 3: 插入后立即登记到内存 existingMap，防止后续循环发生冲突
+                $existingMap[$key] = [
+                    'id'           => $newSubId,
+                    'record_value' => $r['value'],
+                    'status'       => 'active',
+                    'alias_name'   => null
+                ];
             } else {
                 $old = $existingMap[$key];
                 if ($old['record_value'] !== $r['value']) {
-                    // 🔄 解析记录变更
                     $nameInfo = $this->nameResolver->resolve(
                         $r['subdomain'],
                         $domain['domain'],
@@ -350,7 +349,6 @@ class SubdomainScanner
             }
         }
 
-        // ❌ 失效判定
         foreach ($existingMap as $k => $old) {
             if (!isset($currentMap[$k]) && $old['status'] === 'active') {
                 $changes[] = [
@@ -373,7 +371,6 @@ class SubdomainScanner
             Database::insert('change_logs', array_merge($c, ['created_at' => date('Y-m-d H:i:s')]));
         }
 
-        // 全量快照归档
         $snapshotJson = json_encode($records, JSON_UNESCAPED_UNICODE);
         Database::insert('dns_snapshots', [
             'domain_id'     => $domain['id'],
@@ -392,24 +389,11 @@ class SubdomainScanner
         return $changes;
     }
 
-    /**
-     * 计算来源与风险优先级
-     * CT 日志新出现 > 主动爆破 > 第三方 API > 搜索/泄露
-     */
     private function calculatePriority(string $source, bool $isTakeover): string
     {
-        if ($isTakeover) {
-            return 'critical'; // 接管风险最高级
-        }
-        if (in_array($source, ['crt.sh', 'certspotter', 'tls_san'], true)) {
-            return 'high';     // 证书日志即时级别
-        }
-        if (in_array($source, ['brute_enum', 'axfr'], true)) {
-            return 'high';
-        }
-        if (in_array($source, ['github_dork', 'js_sourcemap'], true)) {
-            return 'normal';
-        }
+        if ($isTakeover) return 'critical';
+        if (in_array($source, ['crt.sh', 'certspotter', 'tls_san'], true)) return 'high';
+        if (in_array($source, ['brute_enum', 'axfr'], true)) return 'high';
         return 'normal';
     }
 
