@@ -1,8 +1,9 @@
-version: '3.8'
-
 services:
+  # 1. PHP-FPM 后端核心应用容器 (自包含必要扩展: pdo_mysql, curl, mbstring, sockets, opcache)
   app:
-    image: php:8.2-fpm-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: src_monitor_app
     restart: always
     working_dir: /var/www/html
@@ -11,9 +12,31 @@ services:
     environment:
       - APP_ENV=production
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - src_network
 
+  # 2. 定时巡检与资产监控计划任务服务 (自动每分钟执行一次巡检)
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: src_monitor_cron
+    restart: always
+    working_dir: /var/www/html
+    volumes:
+      - ./:/var/www/html
+    command: >
+      sh -c "while true; do php app/Console/cron.php; sleep 60; done"
+    depends_on:
+      - app
+    networks:
+      - src_network
+
+  # 3. Nginx 生产反向代理与前端静态资源服务器
   nginx:
     image: nginx:alpine
     container_name: src_monitor_nginx
@@ -25,7 +48,10 @@ services:
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - app
+    networks:
+      - src_network
 
+  # 4. MySQL 8.0 关系型数据库服务
   mysql:
     image: mysql:8.0
     container_name: src_monitor_mysql
@@ -37,13 +63,28 @@ services:
       - mysql_data:/var/lib/mysql
     ports:
       - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - src_network
 
+  # 5. Redis 高速缓存与限流令牌桶服务
   redis:
     image: redis:7-alpine
     container_name: src_monitor_redis
     restart: always
     volumes:
       - redis_data:/data
+    networks:
+      - src_network
+
+networks:
+  src_network:
+    driver: bridge
 
 volumes:
   mysql_data:

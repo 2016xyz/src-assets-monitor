@@ -33,13 +33,109 @@
 
 ## 二、全平台详细安装与搭建教程
 
-系统支持 **Linux 原生**、**Windows 本地**、**Docker 容器**、**宝塔面板** 四种部署形态。
+系统支持 **Docker 容器编排 (推荐生产)**、**Linux 原生**、**Windows 本地**、**宝塔面板** 四种部署形态。
+
+---
+
+### 方案 3：Docker & Docker Compose 一键启动 (全平台通用 · 生产推荐)
+
+完全环境隔离，无需在宿主机额外配置 PHP、MySQL、Nginx 或 Redis。
+
+#### 3.1 前置环境安装 (若服务器尚未安装 Docker)
+
+- **Ubuntu / Debian**：
+  ```bash
+  # 移除旧版本并安装官方 Docker 引擎
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  ```
+- **CentOS / RHEL 8+**：
+  ```bash
+  sudo yum install -y yum-utils
+  sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  sudo systemctl start docker && sudo systemctl enable docker
+  ```
+
+#### 3.2 完整详细启动命令 (复制即可执行)
+
+```bash
+# 步骤 1: 克隆项目源码到服务器
+git clone https://github.com/2016xyz/src-assets-monitor.git
+cd src-assets-monitor
+
+# 步骤 2: 准备配置文件与运行时权限
+cp .env.example .env
+mkdir -p runtime public/uploads
+chmod -R 777 runtime public/uploads
+
+# 步骤 3: 一键构建镜像并启动全部容器 (app + cron + nginx + mysql + redis)
+docker compose up -d --build
+```
+
+#### 3.3 查看运行状态与验证
+
+```bash
+# 查看所有容器健康状态 (确认全部处于 Up / healthy 状态)
+docker compose ps
+
+# 预期输出:
+# NAME                IMAGE                 COMMAND                  SERVICE   STATUS                    PORTS
+# src_monitor_app     src-assets-monitor-app "docker-php-entrypoi…"   app       running                   9000/tcp
+# src_monitor_cron    src-assets-monitor-cron "sh -c 'while true; …"   cron      running                   
+# src_monitor_mysql   mysql:8.0             "docker-entrypoint.s…"   mysql     running (healthy)         0.0.0.0:3306->3306/tcp
+# src_monitor_nginx   nginx:alpine          "/docker-entrypoint.…"   nginx     running                   0.0.0.0:8080->80/tcp
+# src_monitor_redis   redis:7-alpine        "docker-entrypoint.s…"   redis     running                   6379/tcp
+```
+
+#### 3.4 浏览器完成首次安装向导配置
+
+在浏览器中打开：
+```text
+http://<您的服务器IP>:8080/
+```
+系统将自动进入 5 步初始化向导，在 **步骤 2「数据库配置」** 中填写：
+- **主机地址**：填写容器服务名 **`mysql`**（注意不要填 127.0.0.1）
+- **端口**：**`3306`**
+- **数据库名**：**`src_monitor`**
+- **用户名**：**`root`**
+- **密码**：**`rootpassword`**
+- 点击「测试数据库连接」➔ 测试通过后点击「下一步」自动完成建表迁移！
+
+#### 3.5 常用维护与运维命令清单
+
+```bash
+# 查看业务实时流水日志 (查看检测任务调度)
+docker compose logs -f cron
+
+# 查看 PHP-FPM 与 Web 访问日志
+docker compose logs -f app
+docker compose logs -f nginx
+
+# 重启全部服务
+docker compose restart
+
+# 进入后端容器 CLI 环境 (执行手动调试命令)
+docker compose exec app sh
+
+# 停止并保留数据库数据
+docker compose stop
+
+# 完全停止并移除容器 (数据保留在 Docker 数据卷 mysql_data 中)
+docker compose down
+```
 
 ---
 
 ### 方案 1：Linux 生产环境原生搭建 (Ubuntu / Debian / CentOS)
 
-#### 1.1 一键自动化安装 (推荐)
+#### 1.1 一键自动化安装 (最简方式)
 ```bash
 # 克隆仓库
 git clone https://github.com/2016xyz/src-assets-monitor.git
@@ -50,71 +146,59 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-#### 1.2 手动安装步骤 (Step-by-Step)
-1. **安装 PHP 8.1+ 及扩展**：
-   ```bash
-   # Ubuntu / Debian:
-   sudo apt update
-   sudo apt install -y php-cli php-fpm php-mysql php-sqlite3 php-curl php-mbstring php-xml php-openssl php-sockets
-
-   # CentOS / RHEL 8+:
-   sudo dnf install -y epel-release
-   sudo dnf install -y php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml php-sockets
-   ```
+#### 1.2 手动配置步骤
+1. **安装环境依赖**：
+   - Ubuntu / Debian：
+     ```bash
+     sudo apt update && sudo apt install -y php-cli php-fpm php-mysql php-sqlite3 php-curl php-mbstring php-xml php-openssl php-sockets nginx
+     ```
+   - CentOS / RHEL 8+：
+     ```bash
+     sudo dnf install -y epel-release && sudo dnf install -y php-cli php-fpm php-mysqlnd php-curl php-mbstring php-xml php-sockets nginx
+     ```
 2. **初始化配置与目录权限**：
    ```bash
    cp .env.example .env
    mkdir -p runtime public/uploads
-   sudo chown -R www-data:www-data runtime public/uploads
+   sudo chown -R www-data:www-data runtime public/uploads  # CentOS 为 nginx:nginx
    sudo chmod -R 775 runtime public/uploads
    ```
-3. **配置 Nginx 虚拟主机**：
-   编辑 `/etc/nginx/sites-available/src-monitor.conf`（CentOS 为 `/etc/nginx/conf.d/src-monitor.conf`）：
+3. **配置 Nginx 虚拟主机**（`/etc/nginx/conf.d/src_monitor.conf`）：
    ```nginx
    server {
        listen 80;
-       server_name monitor.yourdomain.com; # 替换为您的域名或IP
+       server_name monitor.yourdomain.com; # 您的域名或服务器IP
        root /path/to/src-assets-monitor/public;
        index index.html index.php;
 
        client_max_body_size 20M;
 
-       # 静态资源缓存
-       location /assets/ {
-           expires 7d;
-           add_header Cache-Control "public, no-transform";
-       }
-
-       # 单页应用与静态资源
        location / {
            try_files $uri $uri/ /index.html;
        }
 
-       # 后端 API 路由转发
        location ^~ /api/ {
            try_files $uri $uri/ /index.php?$query_string;
        }
 
-       # PHP-FPM 解析 (根据实际 sock 文件或 127.0.0.1:9000 调整)
        location ~ \.php$ {
-           fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+           fastcgi_pass unix:/var/run/php/php8.2-fpm.sock; # 或 127.0.0.1:9000
            fastcgi_index index.php;
            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
            include fastcgi_params;
            fastcgi_read_timeout 180;
        }
 
-       # 拦截敏感文件读取
        location ~ /\.(env|git|lock) {
            deny all;
        }
    }
    ```
-   启用站点并重载 Nginx：`sudo ln -s /etc/nginx/sites-available/src-monitor.conf /etc/nginx/sites-enabled/ && sudo systemctl reload nginx`。
-4. **配置自动化计划任务 (Crontab)**：
-   执行 `crontab -e`，添加如下行：
+   重启 Nginx：`sudo systemctl restart nginx`。
+4. **配置自动化巡检定时任务 (Crontab)**：
    ```bash
-   # 每分钟自动触发资产巡检与代理健康巡检
+   crontab -e
+   # 添加以下行，每分钟自动驱动资产探测、泛解析清洗与代理健康巡检
    * * * * * cd /path/to/src-assets-monitor && php app/Console/cron.php >> /dev/null 2>&1
    ```
 
@@ -124,68 +208,33 @@ sudo ./install.sh
 
 适用于开发调试、内网或 Windows Server 运维人员。
 
-#### 2.1 依赖环境要求
-- 安装任意 PHP 8.1+ 环境（推荐下载 [PHP for Windows](https://windows.php.net/download/) 线程安全版本，或使用 **phpStudy (小皮面板)** / **WampServer**）。
-- 确保 `php.ini` 开启了以下扩展（去掉前面的分号 `;`）：
-  ```ini
-  extension=curl
-  extension=mbstring
-  extension=openssl
-  extension=sockets
-  extension=fileinfo
-  extension=pdo_mysql
-  extension=pdo_sqlite
-  ```
-
-#### 2.2 一键启动
-双击项目根目录下的 **`start.bat`**：
-1. 脚本将自动检测环境、创建 `runtime` 目录并配置本地环境；
-2. 自动唤起默认浏览器访问 `http://127.0.0.1:8000/`；
-3. 直接呈现 **5 步极光玻璃拟态安装向导**，引导完成数据库初始化配置！
-
----
-
-### 方案 3：Docker & Docker Compose 一键启动 (全平台通用)
-
-无需在宿主机配置 PHP、MySQL、Redis，全容器隔离运行。
-
-1. **一键启动所有容器**：
-   ```bash
-   docker-compose up -d
-   ```
-2. **查看运行状态**：
-   ```bash
-   docker-compose ps
-   ```
-   默认暴露宿主机端口：
-   - Web 访问入口：`http://<宿主机IP>:8080/`
-   - MySQL 数据库端口：`3306`（默认 root 密码 `rootpassword`）
-   - Redis 缓存端口：`6379`
-3. **完成首次配置**：
-   在浏览器中打开 `http://<宿主机IP>:8080/`，按步骤完成向导；在数据库步骤中，主机地址填写 **`mysql`**，端口填写 **`3306`**，密码输入 **`rootpassword`** 即可瞬间连接成功！
+1. **环境准备**：
+   - 安装任意 PHP 8.1+ 环境（推荐下载 [PHP for Windows](https://windows.php.net/download/) 或使用 **phpStudy (小皮面板)**）；
+   - 在 `php.ini` 中解除注释开启常用扩展：`curl`、`mbstring`、`openssl`、`sockets`、`fileinfo`、`pdo_mysql`、`pdo_sqlite`。
+2. **一键启动**：
+   - 双击项目根目录下的 **`start.bat`**；
+   - 脚本将自动检测环境、创建 `runtime` 目录并配置本地环境；
+   - 自动在默认浏览器中打开 `http://127.0.0.1:8000/`，直接进入 **5 步极光玻璃拟态安装向导**。
 
 ---
 
 ### 方案 4：宝塔面板 (aaPanel / BT-Panel) 搭建指南
 
-国内运维环境广泛采用宝塔面板，按照以下 5 个直观步骤即可一键上线：
-
-1. **添加站点**：
+1. **新建站点**：
    - 登录宝塔面板 ➔「网站」➔「添加站点」；
-   - 域名输入您的访问域名或服务器 IP；
-   - PHP 版本务必选择 **PHP-81** 或 **PHP-82**。
-2. **安装并开启必要扩展**：
-   - 进入宝塔「软件商店」➔ 找到对应的 PHP 版本 ➔ 点击「设置」➔「安装扩展」；
-   - 确认勾选并安装：`fileinfo`、`redis`；
-   - 在「禁用函数」列表中，如存在 `putenv`、`pcntl_signal` 等，建议从禁用列表中移除以支持完整 CLI 调度。
-3. **上传代码与设置运行目录**：
-   - 将本项目解压至网站根目录；
-   - 进入该网站「设置」➔「网站目录」：
-     - **网站目录** 保持根路径：`/www/wwwroot/your-site/`
-     - **运行目录 (Run directory)** 必须选择：**`/public`**（非常重要，否则无法访问入口）
+   - 填写域名，PHP 版本选择 **PHP-81** 或 **PHP-82**。
+2. **安装扩展与解除禁用**：
+   - 进入宝塔「软件商店」➔ 找到对应的 PHP 版本 ➔「安装扩展」；
+   - 安装 `fileinfo` 与 `redis` 扩展；
+   - 进入「禁用函数」列表，如包含 `putenv`、`pcntl_signal`，建议从禁用列表中移除。
+3. **上传源码与指定运行目录**：
+   - 将本项目源码上传解压至网站根目录；
+   - 点击该站点「设置」➔「网站目录」：
+     - **网站目录**：保持为 `/www/wwwroot/你的网站目录/`
+     - **运行目录 (Run directory)**：务必选择并切换为 **`/public`**（非常关键）
      - 点击「保存」。
-4. **配置伪静态 (URL Rewrite)**：
-   - 在网站设置中点击「伪静态」，粘贴以下通用 Nginx 规则并保存：
+4. **设置伪静态规则 (URL Rewrite)**：
+   - 在站点设置中选择「伪静态」，粘贴以下规则并保存：
      ```nginx
      location / {
          try_files $uri $uri/ /index.html;
@@ -200,14 +249,14 @@ sudo ./install.sh
      }
      ```
 5. **添加定时计划任务**：
-   - 点击宝塔面板左侧「计划任务」➔「添加任务」；
-   - 任务类型选择：**Shell 脚本**；
+   - 进入宝塔左侧「计划任务」➔「添加任务」；
+   - 任务类型：**Shell 脚本**；
    - 执行周期：**N分钟 ➔ 每 1 分钟执行一次**；
-   - 脚本内容填写：
+   - 脚本内容：
      ```bash
-     cd /www/wwwroot/your-site && php app/Console/cron.php >> /dev/null 2>&1
+     cd /www/wwwroot/你的网站目录 && php app/Console/cron.php >> /dev/null 2>&1
      ```
-   - 保存即可实现 24 小时全自动资产巡检与告警推送！
+   - 保存后即可实现 24 小时全自动资产多源发现、接管风险监控与多渠道告警！
 
 ---
 
