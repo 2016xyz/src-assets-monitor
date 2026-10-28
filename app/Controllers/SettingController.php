@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
+use App\Middleware\AuthMiddleware;
+use App\Middleware\SanitizeInputMiddleware;
 
 class SettingController
 {
@@ -22,18 +24,28 @@ class SettingController
 
     public function saveSetting(Request $request): void
     {
+        // 权限防御：仅特权管理员可修改系统级设置
+        if (!AuthMiddleware::isAdmin()) {
+            Response::error('权限不足: 仅特权管理员可更改系统设置', 403, 403);
+        }
+
         $b = $request->input();
-        $key = $b['key'] ?? '';
+        $key = trim($b['key'] ?? '');
         $val = $b['value'] ?? null;
 
-        if (!$key) Response::error('配置 Key 缺失', 422);
+        if (!$key) {
+            Response::error('配置 Key 缺失', 422);
+        }
 
+        // 白名单配置项校验
+        $safeKey = Database::validateIdentifier($key);
         $valStr = is_array($val) ? json_encode($val, JSON_UNESCAPED_UNICODE) : (string)$val;
-        $ex = Database::fetchOne("SELECT id FROM settings WHERE `key` = ?", [$key]);
+        
+        $ex = Database::fetchOne("SELECT id FROM settings WHERE `key` = ?", [$safeKey]);
         if ($ex) {
             Database::update('settings', ['value' => $valStr], 'id = ?', [$ex['id']]);
         } else {
-            Database::insert('settings', ['key' => $key, 'value' => $valStr]);
+            Database::insert('settings', ['key' => $safeKey, 'value' => $valStr]);
         }
 
         Response::json(null, 0, '配置已持久化');
@@ -41,6 +53,10 @@ class SettingController
 
     public function auditLogs(Request $request): void
     {
+        if (!AuthMiddleware::isAdmin()) {
+            Response::error('权限不足: 仅特权管理员可查看审计日志', 403, 403);
+        }
+
         $page = max(1, (int)$request->query('page', 1));
         $pageSize = max(1, min(100, (int)$request->query('page_size', 20)));
         $offset = ($page - 1) * $pageSize;

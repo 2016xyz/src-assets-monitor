@@ -63,6 +63,41 @@ class Database
         return $identifier;
     }
 
+    /**
+     * 严谨验证表名或 JOIN 表达式，支持单表、带别名及安全 JOIN 语句
+     */
+    public static function validateTableExpression(string $table): string
+    {
+        $table = trim($table);
+        // 1. 单表名称: 仅允许字母数字下划线
+        if (preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+            return "`{$table}`";
+        }
+
+        // 2. 表加简单别名: 如 "domains d"
+        if (preg_match('/^([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+)$/', $table, $m)) {
+            return "`{$m[1]}` `{$m[2]}`";
+        }
+
+        // 3. 包含 JOIN 的安全表连接表达式
+        // 确保不包含高危特殊字符：分号、引号、注释符号、括号等
+        if (preg_match('/[;\'"()\\#\/\*\-]/', $table)) {
+            throw new InvalidArgumentException("非法数据库表连接表达式检测到潜在注入攻击: [{$table}]");
+        }
+
+        // 严禁包含高危 SQL 关键词（如 UNION, SELECT, INSERT, DROP 等）
+        if (preg_match('/\b(UNION|SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|BENCHMARK|SLEEP)\b/i', $table)) {
+            throw new InvalidArgumentException("非法数据库关键字检测到潜在注入攻击: [{$table}]");
+        }
+
+        // 仅允许安全的字符集合 (字母、数字、下划线、空格、点、等号、反引号)
+        if (!preg_match('/^[a-zA-Z0-9_\s\.\=\`]+$/', $table)) {
+            throw new InvalidArgumentException("非法表表达式字符: [{$table}]");
+        }
+
+        return $table;
+    }
+
     public static function query(string $sql, array $params = []): \PDOStatement
     {
         $stmt = self::getPdo()->prepare($sql);
@@ -136,12 +171,8 @@ class Database
 
     public static function count(string $table, string $where = '1=1', array $params = []): int
     {
-        // 允许类似于 "domains d" 的简单别名，但禁止复杂注入
-        $parts = explode(' ', trim($table));
-        $safeTable = self::validateIdentifier($parts[0]);
-        $alias = isset($parts[1]) ? ' ' . self::validateIdentifier($parts[1]) : '';
-
-        $sql = "SELECT COUNT(*) as cnt FROM `{$safeTable}`{$alias} WHERE {$where}";
+        $safeFrom = self::validateTableExpression($table);
+        $sql = "SELECT COUNT(*) as cnt FROM {$safeFrom} WHERE {$where}";
         $res = self::fetchOne($sql, $params);
         return (int)($res['cnt'] ?? 0);
     }

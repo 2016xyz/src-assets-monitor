@@ -159,7 +159,7 @@ class SubdomainController
     }
 
     /**
-     * GET /api/v1/subdomains/export-all - 导出全局所有子域名资产为 CSV 格式
+     * GET /api/v1/subdomains/export-all - 导出全局所有子域名资产为 CSV 格式 (防 CSV 公式注入)
      */
     public function exportAllCsv(Request $request): void
     {
@@ -173,6 +173,7 @@ class SubdomainController
 
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename="src_all_subdomains_' . date('Ymd_His') . '.csv"');
+        header('X-Content-Type-Options: nosniff');
 
         $out = fopen('php://output', 'w');
         // 输出 UTF-8 BOM 防 Excel 乱码
@@ -181,19 +182,34 @@ class SubdomainController
 
         foreach ($list as $r) {
             fputcsv($out, [
-                $r['subdomain'],
-                $r['asset_name'] ?: $r['subdomain'],
-                $r['record_type'],
-                $r['record_value'],
-                $r['main_domain'] ?? '',
-                $r['source'],
-                $r['status'],
-                $r['takeover_risk'] ? '⚠️ 是' : '否',
+                $this->sanitizeCsvCell($r['subdomain']),
+                $this->sanitizeCsvCell($r['asset_name'] ?: $r['subdomain']),
+                $this->sanitizeCsvCell($r['record_type']),
+                $this->sanitizeCsvCell($r['record_value']),
+                $this->sanitizeCsvCell($r['main_domain'] ?? ''),
+                $this->sanitizeCsvCell($r['source']),
+                $this->sanitizeCsvCell($r['status']),
+                !empty($r['takeover_risk']) ? '⚠️ 是' : '否',
                 $r['first_seen_at']
             ]);
         }
         fclose($out);
         exit;
+    }
+
+    /**
+     * 防范 CSV 公式执行注入 (Excel / Calc Formula Injection)
+     * 若单元格以 =, +, -, @, 制表符开头，前置单引号强制作为纯文本处理
+     */
+    private function sanitizeCsvCell(?string $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+        if (preg_match('/^[=+\-@\t\r]/', $value)) {
+            return "'" . $value;
+        }
+        return $value;
     }
 
     /**

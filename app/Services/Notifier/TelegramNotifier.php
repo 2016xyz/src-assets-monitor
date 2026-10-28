@@ -14,7 +14,11 @@ class TelegramNotifier implements NotifierInterface
         }
 
         $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
-        $text = "<b>{$title}</b>\n\n" . htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        
+        // 防 HTML 注入：标题与内容统一进行 HTML 安全实体编码
+        $safeTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeContent = htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $text = "<b>{$safeTitle}</b>\n\n{$safeContent}";
 
         $payload = [
             'chat_id'    => $chatId,

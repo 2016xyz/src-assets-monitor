@@ -17,7 +17,7 @@ Database::query("CREATE TABLE IF NOT EXISTS _sec_test (id INTEGER PRIMARY KEY, u
 // ========================================================
 // 1. SQL 注入防御能力测试
 // ========================================================
-echo "[安全防御 1] SQL 注入攻击拦截 (表名与列名注入攻击防御):\n";
+echo "[安全防御 1] SQL 注入攻击拦截 (表名、列名与 JOIN 表达式安全防御):\n";
 
 // 1.1 恶意表名注入尝试
 $tableInjectionPassed = false;
@@ -45,6 +45,26 @@ assert($colInjectionPassed === true, '非法列名必须被 validateIdentifier �
 $mockParam = "' OR '1'='1' -- ";
 $res = Database::fetchOne("SELECT * FROM _sec_test WHERE username = ?", [$mockParam]);
 assert($res === null, '预编译参数绑定必须有效防范万能密码攻击');
+
+// 1.4 validateTableExpression 阻断非法 SQL 注入语句
+$tableExprInjectionPassed = false;
+try {
+    Database::validateTableExpression("subdomains s; DROP TABLE users; --");
+} catch (\InvalidArgumentException $e) {
+    $tableExprInjectionPassed = true;
+    echo "  -> 拦截表表达式中的分号注入攻击\n";
+}
+assert($tableExprInjectionPassed === true, '非法表表达式必须被 validateTableExpression 阻断');
+
+$unionTableInjectionPassed = false;
+try {
+    Database::validateTableExpression("subdomains s UNION SELECT * FROM users");
+} catch (\InvalidArgumentException $e) {
+    $unionTableInjectionPassed = true;
+    echo "  -> 拦截表表达式中的 UNION SELECT 攻击\n";
+}
+assert($unionTableInjectionPassed === true, 'UNION 必须被 validateTableExpression 阻断');
+
 echo "  -> 通过: SQL 注入全路径防御体系完备，零注入漏洞\n\n";
 
 Database::query("DROP TABLE IF EXISTS _sec_test;");
@@ -91,6 +111,17 @@ foreach ($dangerousCsvPayloads as $danger => $expectedSafe) {
     $safeOut = $sanitizeCsvMethod->invoke($domainCtrl, $danger);
     assert($safeOut === $expectedSafe, "危险公式 [{$danger}] 必须前置单引号中和");
 }
+
+// 检验 SubdomainController 的 CSV 清洗方法
+$subReflector = new ReflectionClass(\App\Controllers\SubdomainController::class);
+$subCsvMethod = $subReflector->getMethod('sanitizeCsvCell');
+$subCsvMethod->setAccessible(true);
+$subCtrl = new \App\Controllers\SubdomainController();
+foreach ($dangerousCsvPayloads as $danger => $expectedSafe) {
+    $safeOut = $subCsvMethod->invoke($subCtrl, $danger);
+    assert($safeOut === $expectedSafe, "SubdomainController 必须防范危险公式 [{$danger}]");
+}
+
 echo "  -> 成功中和全部 " . count($dangerousCsvPayloads) . " 种 Excel 恶意执行公式载荷\n";
 echo "  -> 通过: CSV 导出公式注入防御生效\n\n";
 

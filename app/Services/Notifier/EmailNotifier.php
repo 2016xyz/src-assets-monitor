@@ -6,15 +6,19 @@ class EmailNotifier implements NotifierInterface
 {
     public function send(array $config, string $title, string $content, ?array $proxy = null): array
     {
-        $host = $config['smtp_host'] ?? '';
+        $host = trim($config['smtp_host'] ?? '');
         $port = (int)($config['smtp_port'] ?? 465);
-        $user = $config['smtp_user'] ?? '';
+        $user = trim($config['smtp_user'] ?? '');
         $pass = $config['smtp_pass'] ?? '';
-        $to = $config['to_email'] ?? $user;
+        $to = trim($config['to_email'] ?? $user);
 
         if (!$host || !$user) {
             return ['success' => false, 'error' => 'SMTP 主机或账号配置缺失'];
         }
+
+        // 防 SMTP 头注入：彻底剔除换行与回车控制符
+        $cleanUser = str_replace(["\r", "\n", "\0"], '', $user);
+        $cleanTo = str_replace(["\r", "\n", "\0"], '', $to);
 
         try {
             $prefix = ($port == 465) ? 'ssl://' : '';
@@ -26,19 +30,20 @@ class EmailNotifier implements NotifierInterface
             $this->readResponse($socket);
             $this->sendCommand($socket, "EHLO {$host}");
             $this->sendCommand($socket, "AUTH LOGIN");
-            $this->sendCommand($socket, base64_encode($user));
+            $this->sendCommand($socket, base64_encode($cleanUser));
             $this->sendCommand($socket, base64_encode($pass));
-            $this->sendCommand($socket, "MAIL FROM: <{$user}>");
-            $this->sendCommand($socket, "RCPT TO: <{$to}>");
+            $this->sendCommand($socket, "MAIL FROM: <{$cleanUser}>");
+            $this->sendCommand($socket, "RCPT TO: <{$cleanTo}>");
             $this->sendCommand($socket, "DATA");
 
             // 防注入：对邮件标题与内容进行严格 HTML 安全转义 (防邮件客户端 XSS 攻击)
-            $safeTitle = htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $cleanTitle = str_replace(["\r", "\n"], '', $title);
+            $safeTitle = htmlspecialchars($cleanTitle, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $safeContent = nl2br(htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
 
-            $headers = "From: SRC 资产检测站 <{$user}>\r\n" .
-                       "To: <{$to}>\r\n" .
-                       "Subject: =?UTF-8?B?" . base64_encode($title) . "?=\r\n" .
+            $headers = "From: SRC 资产检测站 <{$cleanUser}>\r\n" .
+                       "To: <{$cleanTo}>\r\n" .
+                       "Subject: =?UTF-8?B?" . base64_encode($cleanTitle) . "?=\r\n" .
                        "MIME-Version: 1.0\r\n" .
                        "Content-Type: text/html; charset=UTF-8\r\n\r\n";
 
