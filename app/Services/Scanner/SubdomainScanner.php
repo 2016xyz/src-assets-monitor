@@ -111,7 +111,7 @@ class SubdomainScanner
         $totalCandidates = count($candidatesPool);
         $this->logTask($taskId, 'brute_dns', 'info', "全源候选池汇总就绪，共计 {$totalCandidates} 个，启动 40 路并发 DoH 并行解析");
 
-        // 7. 高性能并发批量 DoH 解析 (按 subdomain 维度整合 A 与 CNAME)
+        // 7. 高性能并发批量 DoH 解析
         $resolvedMap = [];
         $candidateKeys = array_keys($candidatesPool);
         $chunks = array_chunk($candidateKeys, 30);
@@ -132,7 +132,7 @@ class SubdomainScanner
                         $resolvedMap[$sub] = [
                             'subdomain' => $sub,
                             'ips'       => [],
-                            'cname'     => null,
+                            'cnames'    => [],
                             'ttl'       => 300,
                             'sources'   => $candidatesPool[$sub]['sources'] ?? ['unknown']
                         ];
@@ -147,7 +147,9 @@ class SubdomainScanner
                         }
 
                         if ($r['type'] === 'CNAME') {
-                            $resolvedMap[$sub]['cname'] = $val;
+                            if (!in_array($val, $resolvedMap[$sub]['cnames'], true)) {
+                                $resolvedMap[$sub]['cnames'][] = $val;
+                            }
                         } elseif ($r['type'] === 'A' && filter_var($val, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
                             if (!in_array($val, $resolvedMap[$sub]['ips'], true)) {
                                 $resolvedMap[$sub]['ips'][] = $val;
@@ -162,7 +164,15 @@ class SubdomainScanner
         // 8. 过滤掉仅命中泛解析被清空的假子域，整理出存活列表
         $activeEntries = [];
         foreach ($resolvedMap as $sub => $info) {
-            if (!empty($info['ips']) || !empty($info['cname'])) {
+            // 对 IP 列表进行自然排序保证字符串稳定性
+            if (!empty($info['ips'])) {
+                sort($info['ips'], SORT_NATURAL);
+            }
+            // 选取首选 CNAME (优先最前一跳)
+            $selectedCname = !empty($info['cnames']) ? $info['cnames'][0] : null;
+
+            if (!empty($info['ips']) || $selectedCname) {
+                $info['cname'] = $selectedCname;
                 $activeEntries[$sub] = $info;
             }
         }
@@ -181,16 +191,20 @@ class SubdomainScanner
                     $res = $this->dohClient->resolve($jsSub, 'A', $proxy);
                     if (!empty($res['records'])) {
                         $ips = [];
-                        $cname = null;
+                        $cnames = [];
                         foreach ($res['records'] as $r) {
                             if ($r['type'] === 'A') $ips[] = trim($r['data'], '. ');
-                            if ($r['type'] === 'CNAME') $cname = trim($r['data'], '. ');
+                            if ($r['type'] === 'CNAME') $cnames[] = trim($r['data'], '. ');
                         }
-                        if (!empty($ips) || $cname) {
+                        if (!empty($ips)) sort($ips, SORT_NATURAL);
+                        $firstCname = !empty($cnames) ? $cnames[0] : null;
+
+                        if (!empty($ips) || $firstCname) {
                             $analyzedEntries[$jsSub] = [
                                 'subdomain'       => $jsSub,
                                 'ips'             => $ips,
-                                'cname'           => $cname,
+                                'cnames'          => $cnames,
+                                'cname'           => $firstCname,
                                 'ttl'             => 300,
                                 'sources'         => ['js_sourcemap'],
                                 'takeover_risk'   => 0,
@@ -363,6 +377,7 @@ class SubdomainScanner
             $recordType = !empty($info['ips']) ? 'A' : 'CNAME';
 
             if (!isset($existingMap[$sub])) {
+                // 全新存活资产发现 ➔ 触发新增告警
                 $nameInfo = $this->nameResolver->resolve(
                     $sub,
                     $domain['domain'],
@@ -429,11 +444,24 @@ class SubdomainScanner
                 $isCnameChanged = (($old['cname_record'] ?? '') !== ($cnameRecord ?? ''));
 
                 if ($isValChanged || $isCnameChanged) {
-                    $isCdnManaged = (!empty($cnameRecord) && CdnDriftFilter::isCdnCname($cnameRecord)) ||
-                                    (!empty($old['cname_record']) && CdnDriftFilter::isCdnCname($old['cname_record']));
+                    // 判断是否为 CDN 节点良性轮换
+                    $allCnames = array_filter(array_merge(
+                        [$cnameRecord, $old['cname_record'] ?? null],
+                        $info['cnames'] ?? []
+                    ));
+                    $isCdnManaged = false;
+                    foreach ($allCnames as $cn) {
+                        if (CdnDriftFilter::isCdnCname($cn)) {
+                            $isCdnManaged = true;
+                            break;
+                        }
+                    }
 
                     $isBenign = false;
-                    if (!$isCnameChanged && $isValChanged) {
+                    if ($isCdnManaged) {
+                        // 处于 CDN 管理之下的资产，其多节点 IP 轮换或 CNAME 调度链内部变化均属于良性漂移
+                        $isBenign = true;
+                    } else {
                         $isBenign = CdnDriftFilter::isBenignCdnDrift(
                             $old['record_value'],
                             $displayValue,
@@ -445,7 +473,7 @@ class SubdomainScanner
                     if ($isBenign) {
                         Database::update('subdomains', [
                             'record_value' => $displayValue,
-                            'cname_record' => $cnameRecord,
+                            'cname_record' => $cnameRecord ?: ($old['cname_record'] ?? null),
                             'last_seen_at' => date('Y-m-d H:i:s')
                         ], 'id = ?', [$old['id']]);
                     } else {

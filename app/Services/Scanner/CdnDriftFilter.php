@@ -37,6 +37,7 @@ class CdnDriftFilter
         'dnsv1.com',
         'dnsv1.com.cn',
         'tdnsv8.com',
+        'sched.tdnsv8.com',
         'qcloudcdn.com',
         'tcdn.qq.com',
         'kunlun.com',
@@ -71,7 +72,24 @@ class CdnDriftFilter
     }
 
     /**
-     * 综合判断该解析变化是否属于 CDN 内部的良性 Anycast / GeoDNS 动态调度
+     * 判断两个 IP 集合是否存在交集 (Jaccard 重叠判定)
+     * 例如一次返回 [211.93.211.158, 36.35.39.162]，另一次返回 [36.35.39.162, 42.236.90.50]，存在重叠节点说明为同一个 CDN 轮换池
+     */
+    public static function hasIpOverlap(string $ipList1, string $ipList2): bool
+    {
+        $arr1 = array_filter(array_map('trim', explode(',', $ipList1)));
+        $arr2 = array_filter(array_map('trim', explode(',', $ipList2)));
+
+        if (empty($arr1) || empty($arr2)) {
+            return false;
+        }
+
+        $intersect = array_intersect($arr1, $arr2);
+        return !empty($intersect);
+    }
+
+    /**
+     * 综合判断该解析变化是否属于 CDN 内部的良性 Anycast / GSLB 节点轮换调度
      */
     public static function isBenignCdnDrift(
         ?string $oldValue,
@@ -90,25 +108,51 @@ class CdnDriftFilter
             return true;
         }
 
-        // 1. 如果该子域名挂载在 CDN 之下 (存在指向 Cloudflare/EdgeOne 等的 CNAME 记录)
-        // 其下属 A 记录由不同递归 DNS 查询出的节点 IP 切换，均属于 CDN 正常边缘分发
+        // 1. 如果该子域名直接或间接挂载在知名 CDN 之下 (Cloudflare / EdgeOne / 腾讯CDN / 阿里CDN 等)
+        // 其下属多节点 IP 轮换完全属于边缘 CDN 动态健康调度，直接静默放行！
         if ($isManagedByCdn) {
             return true;
         }
 
-        // 2. 如果存在 CNAME 链并命中了 CDN 特征
-        if (self::isCdnCname($cnameChain) || self::isCdnCname($oldValue) || self::isCdnCname($newValue)) {
+        // 2. 如果新旧值或 CNAME 链包含知名 CDN 特征
+        if (self::isCdnCname($cnameChain) || self::isCdnCname($oldVal) || self::isCdnCname($newVal)) {
             return true;
         }
 
-        // 3. 如果新旧 IP 均属于 Cloudflare 官方网段
-        if (self::isCloudflareIp($oldVal) && self::isCloudflareIp($newVal)) {
+        // 3. 多 IP 节点调度池重叠判定：如果新旧两批 IP 存在交集节点，说明是在同一个 CDN 节点池内轮询
+        if (self::hasIpOverlap($oldVal, $newVal)) {
             return true;
         }
 
-        // 4. 同一 /24 子网下的 Anycast 轮换
-        if (self::isSameSubnet($oldVal, $newVal, 24)) {
+        // 4. 如果新旧 IP 均属于 Cloudflare 官方网段
+        $oldIps = array_filter(array_map('trim', explode(',', $oldVal)));
+        $newIps = array_filter(array_map('trim', explode(',', $newVal)));
+
+        $allOldCf = !empty($oldIps);
+        foreach ($oldIps as $ip) {
+            if (!self::isCloudflareIp($ip)) {
+                $allOldCf = false;
+                break;
+            }
+        }
+
+        $allNewCf = !empty($newIps);
+        foreach ($newIps as $ip) {
+            if (!self::isCloudflareIp($ip)) {
+                $allNewCf = false;
+                break;
+            }
+        }
+
+        if ($allOldCf && $allNewCf) {
             return true;
+        }
+
+        // 5. 同一 /24 子网下的 Anycast 轮换
+        if (count($oldIps) === 1 && count($newIps) === 1) {
+            if (self::isSameSubnet($oldIps[0], $newIps[0], 24)) {
+                return true;
+            }
         }
 
         return false;
