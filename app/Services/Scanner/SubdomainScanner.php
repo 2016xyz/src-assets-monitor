@@ -2,6 +2,7 @@
 
 namespace App\Services\Scanner;
 
+use App\Core\App;
 use App\Core\Database;
 use App\Services\Proxy\DoHProxyClient;
 use App\Services\Proxy\ProxyScheduler;
@@ -89,14 +90,14 @@ class SubdomainScanner
             }
         }
 
-        // 6. 阶段五：定时每日深度字典爆破 (1200+ 词汇复合置换生成)
-        // 规则：每天定时跑一次爆破，其余轮询轻量快速核查存活
+        // 6. 阶段五：定时每日深度超大字典爆破 (2500+ 精华词汇 + 智能衍生)
         $lastBrute = !empty($domain['last_brute_at']) ? strtotime($domain['last_brute_at']) : 0;
         $isBruteTime = $forceBrute || (time() - $lastBrute >= 86400) || empty($domain['last_brute_at']);
 
         if ($isBruteTime) {
-            $this->logTask($taskId, 'brute_enum', 'info', "【每日定时爆破】启动企业级超大字典 (1200+ 高频词与环境变异) 全网枚举");
             $dict = $this->generatePermutationDictionary($domain['domain'], array_keys($candidatesPool));
+            $dictCount = count($dict);
+            $this->logTask($taskId, 'brute_enum', 'info', "【每日定时大字典爆破】调度包含 {$dictCount} 个精华高频词与前缀衍生进行全网暴力探测");
             foreach ($dict as $w) {
                 $sub = "{$w}.{$domain['domain']}";
                 $this->appendCandidate($candidatesPool, $sub, 'brute_enum');
@@ -104,14 +105,13 @@ class SubdomainScanner
             Database::update('domains', ['last_brute_at' => date('Y-m-d H:i:s')], 'id = ?', [$domain['id']]);
         } else {
             $nextHours = round((86400 - (time() - $lastBrute)) / 3600, 1);
-            $this->logTask($taskId, 'brute_enum', 'info', "今日主动大字典爆破已执行，本轮执行高速存活核查 (距下次全量爆破约 {$nextHours} 小时)");
+            $this->logTask($taskId, 'brute_enum', 'info', "今日大字典全量爆破已完成，本轮执行高速存活核查 (距下次全量爆破约 {$nextHours} 小时)");
         }
 
         $totalCandidates = count($candidatesPool);
         $this->logTask($taskId, 'brute_dns', 'info', "全源候选池汇总就绪，共计 {$totalCandidates} 个，启动 40 路并发 DoH 并行解析");
 
         // 7. 高性能并发批量 DoH 解析 (按 subdomain 维度整合 A 与 CNAME)
-        // 结构: [subdomain => ['ips' => [...], 'cname' => '...', 'sources' => [...]]]
         $resolvedMap = [];
         $candidateKeys = array_keys($candidatesPool);
         $chunks = array_chunk($candidateKeys, 30);
@@ -156,7 +156,7 @@ class SubdomainScanner
                     }
                 }
             }
-            usleep(50000); // 50ms 微间隔防突发
+            usleep(50000);
         }
 
         // 8. 过滤掉仅命中泛解析被清空的假子域，整理出存活列表
@@ -234,41 +234,34 @@ class SubdomainScanner
     }
 
     /**
-     * 生成超大复合字典 (单字母/双字母/高频服务/多级子域变异)
+     * 生成超大复合精华字典 (加载 database/dictionary.txt 文件字典 + 智能拼音/数字/多级变异衍生)
      */
     private function generatePermutationDictionary(string $mainDomain, array $existingCandidates = []): array
     {
-        $singleLetters = array_merge(range('a', 'z'), range('0', '9'));
+        $dictFile = App::basePath('database/dictionary.txt');
+        $fileWords = [];
+        if (file_exists($dictFile)) {
+            $lines = file($dictFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (is_array($lines)) {
+                foreach ($lines as $line) {
+                    $w = strtolower(trim($line));
+                    if ($w !== '' && !str_starts_with($w, '#')) {
+                        $fileWords[] = $w;
+                    }
+                }
+            }
+        }
 
-        $twoLetters = [
-            'sh', 'wx', 'bx', 'st', 'cp', 'sp', 'qc', 'wa', 'wd', 'wy', 'yl', 'gc', 'd5', 'sr',
-            'oa', 'ai', 'it', 'hr', 'bi', 'cs', 'db', 'pr', 'ad', 'gw', 'm1', 'm2', 's1', 's2',
-            'v1', 'v2', 'v3', 'ip', 'tc', 'ws', 'im', 'id', 'my', 'up', 'dl', 'go', 'to', 'in',
-            'sd', 'bj', 'gz', 'sz', 'hz', 'cd', 'wh', 'nj', 'cq', 'xa', 'fs', 'dg', 'hk', 'tw'
-        ];
-
-        $enterpriseDict = [
+        // 兜底常用核心服务词汇
+        $coreWords = [
             'www', 'api', 'mail', 'admin', 'app', 'm', 'h5', 'wap', 'test', 'dev', 'uat', 'stg', 'prod',
-            'pre', 'beta', 'demo', 'stage', 'vpn', 'oa', 'git', 'gitlab', 'svn', 'wiki', 'jira', 'jenkins',
-            'auth', 'portal', 'login', 'sso', 'cas', 'pass', 'passport', 'account', 'user', 'member', 'vip',
-            'pay', 'payment', 'trade', 'order', 'shop', 'mall', 'client', 'pc', 'web', 'site', 'bbs', 'forum',
-            'gateway', 'router', 'proxy', 'ngrok', 'frp', 'rustdesk', 'vnc', 'rdp', 'ssh', 'bastion',
-            'harbor', 'k8s', 'nacos', 'apollo', 'eureka', 'consul', 'minio', 'oss', 'cos', 'obs',
-            'cdn', 'static', 'res', 'img', 'image', 'file', 'upload', 'download', 'backup', 'bak', 'old',
-            'temp', 'tmp', 'new', 'release', 'deploy', 'dispatch', 'job', 'task', 'cron', 'schedule',
-            'rabbitmq', 'rocketmq', 'kafka', 'redis', 'mysql', 'sql', 'db', 'database', 'oracle', 'pg',
-            'monitor', 'alert', 'notice', 'message', 'sms', 'push', 'zabbix', 'grafana', 'prometheus', 'jaeger',
-            'elk', 'kibana', 'trace', 'dubbo', 'emqx', 'mqtt', 'ntp', 'time', 'cert', 'ssl', 'ca', 'acme',
-            'cloud', 'yun', 'yun1', 'pan', 'drive', 'share', 'live', 'video', 'stream', 'rtmp', 'meeting',
-            'zoom', 'conference', 'voip', 'sip', 'iot', 'edge', 'node', 'server', 'host', 'vps', 'vm',
-            'pve', 'pvewin', 'esxi', 'docker', 'portainer', 'kubernetes', 'sonarqube', 'nexus', 'mirrors',
-            'repo', 'build', 'graylog', 'sentry', 'flink', 'spark', 'hadoop', 'hive', 'doris', 'clickhouse',
-            'tidb', 'elastic', 'opensearch', 'kdyun', 'mali', 'mbti', 'nmap', 'testxss', 'v', 'wji', 'wno',
-            'xss', 'zmcp', 'fern', 'pop', 'smtp', 'q', 't', 'open', 'openapi', 'sdk', 'help', 'docs', 'doc',
-            'status', 'health', 'report', 'log', 'corp', 'internal', 'inner', 'lan', 'local', 'office',
-            'bastion-host', 'sec', 'security', 'soc', 'siem', 'waf', 'ids', 'ips', 'audit', 'vuln'
+            'vpn', 'oa', 'git', 'auth', 'login', 'sso', 'cas', 'pay', 'shop', 'mall', 'bbs', 'forum',
+            'gateway', 'proxy', 'ngrok', 'frp', 'ssh', 'rdp', 'k8s', 'docker', 'pve', 'nacos', 'apollo',
+            'redis', 'mysql', 'sql', 'db', 'minio', 'oss', 'cos', 'kafka', 'mq', 'monitor', 'zabbix',
+            'grafana', 'elk', 'sec', 'waf', 'nmap', 'new', 'ai', 'bx', 'wx', 'st', 'sh', 'cp', 'sp'
         ];
 
+        // 用户在设置中自定义的子域名字典
         $customDict = [];
         $row = Database::fetchOne("SELECT `value` FROM `settings` WHERE `key` = 'dictionary_subdomains'");
         if ($row && !empty($row['value'])) {
@@ -276,12 +269,13 @@ class SubdomainScanner
             if (is_array($parsed)) $customDict = $parsed;
         }
 
-        $allWords = array_values(array_unique(array_merge($singleLetters, $twoLetters, $enterpriseDict, $customDict)));
+        $allWords = array_values(array_unique(array_merge($fileWords, $coreWords, $customDict)));
 
+        // 环境变体衍生 (针对前 40 个最核心高频业务词汇生成 -dev, -test, -stg, -uat, -prod 等)
         $environments = ['dev', 'test', 'uat', 'stg', 'prod', 'inner', 'internal'];
         $generated = $allWords;
 
-        foreach (array_slice($allWords, 0, 30) as $word) {
+        foreach (array_slice($allWords, 0, 40) as $word) {
             foreach ($environments as $env) {
                 $generated[] = "{$word}-{$env}";
                 $generated[] = "{$env}-{$word}";
@@ -290,6 +284,7 @@ class SubdomainScanner
             $generated[] = "{$word}2";
         }
 
+        // 多级子域衍生 (如针对 cp 生成 api.cp, ap.cp, admin.cp, m.cp)
         foreach ($existingCandidates as $cand) {
             $parts = explode('.', $cand);
             if (count($parts) >= 3) {
@@ -351,7 +346,6 @@ class SubdomainScanner
      */
     private function diffAndPersistUnified(array $domain, int $taskId, array $activeEntries, array $inactiveCandidates, ?array $proxy): array
     {
-        // 1. 读取该主域名下全部存量记录 (subdomain 唯一映射)
         $existing = Database::fetchAll("SELECT * FROM subdomains WHERE domain_id = ?", [$domain['id']]);
         $existingMap = [];
         foreach ($existing as $ex) {
@@ -360,18 +354,15 @@ class SubdomainScanner
 
         $changes = [];
 
-        // 2. 依次比对并入库活跃存活记录
         foreach ($activeEntries as $sub => $info) {
             $primarySource = ($info['sources'][0] ?? 'unknown');
             $priority = $this->calculatePriority($primarySource, !empty($info['takeover_risk']));
 
-            // 格式化解析指向显示值：优先显示 IPv4 地址，若无 IP 则显示 CNAME
             $displayValue = !empty($info['ips']) ? implode(', ', $info['ips']) : $info['cname'];
             $cnameRecord = $info['cname'] ?? null;
             $recordType = !empty($info['ips']) ? 'A' : 'CNAME';
 
             if (!isset($existingMap[$sub])) {
-                // 全新存活资产发现 ➔ 触发新增告警
                 $nameInfo = $this->nameResolver->resolve(
                     $sub,
                     $domain['domain'],
@@ -426,7 +417,6 @@ class SubdomainScanner
             } else {
                 $old = $existingMap[$sub];
 
-                // 恢复存活
                 if ($old['status'] !== 'active' || ($old['missing_count'] ?? 0) > 0) {
                     Database::update('subdomains', [
                         'status'        => 'active',
@@ -435,12 +425,10 @@ class SubdomainScanner
                     ], 'id = ?', [$old['id']]);
                 }
 
-                // 检查解析值或 CNAME 指向是否发生变动
                 $isValChanged = ($old['record_value'] !== $displayValue);
                 $isCnameChanged = (($old['cname_record'] ?? '') !== ($cnameRecord ?? ''));
 
                 if ($isValChanged || $isCnameChanged) {
-                    // 判断是否为 CDN 正常 Anycast IP 调度轮换
                     $isCdnManaged = (!empty($cnameRecord) && CdnDriftFilter::isCdnCname($cnameRecord)) ||
                                     (!empty($old['cname_record']) && CdnDriftFilter::isCdnCname($old['cname_record']));
 
@@ -455,14 +443,12 @@ class SubdomainScanner
                     }
 
                     if ($isBenign) {
-                        // 良性 Anycast 调度：静默更新数据库，不产生告警通知
                         Database::update('subdomains', [
                             'record_value' => $displayValue,
                             'cname_record' => $cnameRecord,
                             'last_seen_at' => date('Y-m-d H:i:s')
                         ], 'id = ?', [$old['id']]);
                     } else {
-                        // 真实解析变更
                         $nameInfo = $this->nameResolver->resolve(
                             $sub,
                             $domain['domain'],
@@ -510,7 +496,6 @@ class SubdomainScanner
             }
         }
 
-        // 3. 入库未解析的历史证书资产 (保证全景归档，单子域名唯一)
         foreach ($inactiveCandidates as $candSub => $candMeta) {
             if (isset($existingMap[$candSub])) {
                 continue;
@@ -541,7 +526,6 @@ class SubdomainScanner
             $existingMap[$candSub] = true;
         }
 
-        // 4. NXDOMAIN 防抖：针对库内原本活跃但本轮未解析到的记录
         foreach ($existingMap as $candSub => $old) {
             if (is_array($old) && !isset($activeEntries[$candSub]) && $old['status'] === 'active') {
                 $retryRes = $this->dohClient->resolve($candSub, $old['record_type'] ?? 'A', $proxy);
@@ -578,7 +562,6 @@ class SubdomainScanner
             }
         }
 
-        // 5. 变动日志写入与快照保存
         foreach ($changes as $c) {
             Database::insert('change_logs', array_merge($c, ['created_at' => date('Y-m-d H:i:s')]));
         }
