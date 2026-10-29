@@ -518,9 +518,14 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="record_type" label="类型" width="75" />
-                <el-table-column prop="record_value" label="解析指向值" min-width="190">
+                <el-table-column label="解析指向值 (IP / CNAME)" min-width="210">
                   <template #default="{ row }">
-                    <span style="font-family:monospace; font-size:12px;">{{ row.record_value }}</span>
+                    <div style="font-family:monospace; font-size:12px; font-weight:600; color:var(--text-1);">
+                      {{ row.record_value }}
+                    </div>
+                    <div v-if="row.cname_record" style="font-size:11px; color:var(--text-3); margin-top:2px; word-break:break-all;">
+                      🔗 CNAME: {{ row.cname_record }}
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="风险评估" width="115">

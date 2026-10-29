@@ -12,7 +12,7 @@ use App\Services\Proxy\ProxyRateLimiter;
 use App\Services\Proxy\ProxyScheduler;
 use App\Services\Scanner\SubdomainScanner;
 
-// 若系统尚未安装完成，静默退出
+// 若系统尚未完成首次安装，静默跳过
 if (!EnsureSystemInstalled::check()) {
     echo "[" . date('Y-m-d H:i:s') . "] 系统尚未完成首次安装向导配置，自动跳过本轮巡检。\n";
     exit(0);
@@ -28,7 +28,7 @@ $scanner = new SubdomainScanner($doh, $scheduler);
 $notifier = new NotificationManager($scheduler);
 $healthChecker = new ProxyHealthChecker($cb);
 
-// 1. 代理健康周期巡检 (每5分钟巡检一次)
+// 1. 代理健康周期巡检 (每 5 分钟探测一次)
 $proxies = Database::fetchAll("SELECT * FROM proxies WHERE status = 1");
 foreach ($proxies as $p) {
     $last = strtotime($p['last_check_at'] ?? '2000-01-01');
@@ -38,7 +38,7 @@ foreach ($proxies as $p) {
     }
 }
 
-// 2. 主域名巡检
+// 2. 主域名周期性巡检与每日主动字典爆破
 $domains = Database::fetchAll("SELECT * FROM domains WHERE is_enabled = 1");
 foreach ($domains as $domain) {
     $lastScanned = strtotime($domain['last_scanned_at'] ?? '2000-01-01');
@@ -51,7 +51,12 @@ foreach ($domains as $domain) {
     };
 
     if ($diffMinutes >= $interval) {
-        echo " - 开始巡检域名 [{$domain['domain']}]...\n";
+        $lastBrute = !empty($domain['last_brute_at']) ? strtotime($domain['last_brute_at']) : 0;
+        $needDailyBrute = (time() - $lastBrute >= 86400) || empty($domain['last_brute_at']);
+        $modeDesc = $needDailyBrute ? "包含【每日大字典爆破】" : "轻量快速存活监控";
+
+        echo " - 开始巡检域名 [{$domain['domain']}] ({$modeDesc})...\n";
+
         $taskId = Database::insert('scan_tasks', [
             'domain_id'    => $domain['id'],
             'trigger_type' => 'auto',
@@ -61,7 +66,8 @@ foreach ($domains as $domain) {
         ]);
 
         try {
-            $res = $scanner->scan($domain, $taskId);
+            // 传入每日爆破标志
+            $res = $scanner->scan($domain, $taskId, $needDailyBrute);
             Database::update('scan_tasks', [
                 'status'           => 'success',
                 'discovered_count' => $res['total_active'],
